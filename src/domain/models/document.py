@@ -11,6 +11,7 @@ class Block:
     text: str
     bbox: tuple[float, float, float, float] | None = None
     section_path: list[str] = field(default_factory=list)
+    page_no: int | None = None
     table_html: str | None = None
     table_json: dict[str, Any] | None = None
     source_span: dict[str, Any] | None = None
@@ -50,4 +51,3 @@ class Document:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

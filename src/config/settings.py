@@ -13,6 +13,8 @@ class Settings:
     source_pdf_dir: Path
     artifacts_dir: Path
     parsed_dir: Path
+    chunks_dir: Path
+    manifests_dir: Path
     indexes_dir: Path
     debug: bool = False
 
@@ -28,7 +30,8 @@ def get_settings() -> Settings:
         source_pdf_dir=data_dir / "source_pdf",
         artifacts_dir=artifacts_dir,
         parsed_dir=artifacts_dir / "parsed",
+        chunks_dir=artifacts_dir / "chunks",
+        manifests_dir=artifacts_dir / "manifests",
         indexes_dir=project_root / "indexes",
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )
-
