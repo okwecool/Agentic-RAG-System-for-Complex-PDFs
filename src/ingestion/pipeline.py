@@ -53,6 +53,7 @@ class IngestionPipeline:
                 document.metadata["generic"]["file_hash"] = source_file.file_hash
                 document.metadata["generic"]["file_name"] = source_file.file_name
                 document = self.cleaner.clean(document)
+                document = self.section_builder.apply(document)
                 document = self.table_extractor.extract(document)
                 document = self.section_builder.apply(document)
                 document.metadata["generic"]["page_count"] = len(document.pages)

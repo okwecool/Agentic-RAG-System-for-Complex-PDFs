@@ -37,6 +37,11 @@ class FakeParser:
         )
 
 
+class NoOpTableExtractor:
+    def extract(self, document: Document) -> Document:
+        return document
+
+
 class IngestionPipelineTest(unittest.TestCase):
     def test_run_creates_artifact_for_pdf_file(self) -> None:
         root = Path.cwd() / ".tmp_tests" / str(uuid.uuid4())
@@ -64,6 +69,7 @@ class IngestionPipelineTest(unittest.TestCase):
                 settings=settings,
                 parser=FakeParser(),
                 chunker=SectionAwareChunker(),
+                table_extractor=NoOpTableExtractor(),
             )
 
             result = pipeline.run()
