@@ -1,6 +1,8 @@
 # folders
 __pycache__/
 .vscode/
+artifacts/
+indexes/
 
 # files
 *.pdf
