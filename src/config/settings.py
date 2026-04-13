@@ -16,6 +16,7 @@ class Settings:
     chunks_dir: Path
     manifests_dir: Path
     indexes_dir: Path
+    local_embedding_model_dir: Path | None = None
     debug: bool = False
 
 
@@ -33,5 +34,6 @@ def get_settings() -> Settings:
         chunks_dir=artifacts_dir / "chunks",
         manifests_dir=artifacts_dir / "manifests",
         indexes_dir=project_root / "indexes",
+        local_embedding_model_dir=Path(r"E:\Models\bge-base-zh-v1.5"),
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )

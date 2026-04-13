@@ -2,35 +2,77 @@
 
 from __future__ import annotations
 
-from hashlib import sha1
+from pathlib import Path
+
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from src.domain.models.document import Chunk
-from src.indexing.text_utils import l2_normalize, tokenize_for_retrieval
 
 
 class EmbeddingService:
-    def __init__(self, dimensions: int = 128) -> None:
+    def __init__(
+        self,
+        dimensions: int = 2048,
+        model_name_or_path: str | None = None,
+    ) -> None:
         self.dimensions = dimensions
+        self.model_name_or_path = model_name_or_path
+        self.backend = "tfidf"
+        self._vectorizer = TfidfVectorizer(
+            analyzer="char",
+            ngram_range=(2, 4),
+            max_features=dimensions,
+            lowercase=True,
+        )
+        self._model = None
+        self._fitted = False
+
+        if model_name_or_path and Path(model_name_or_path).exists():
+            try:
+                from sentence_transformers import SentenceTransformer
+
+                self._model = SentenceTransformer(model_name_or_path, device="cpu")
+                self.backend = "sentence_transformer"
+            except Exception:
+                self._model = None
+                self.backend = "tfidf"
 
     def embed_chunks(self, chunks: list[Chunk]) -> list[list[float]]:
-        return [self._embed_text(chunk.text) for chunk in chunks]
+        texts = [chunk.text for chunk in chunks]
+        if self._model is not None:
+            matrix = self._model.encode(
+                texts,
+                normalize_embeddings=True,
+                batch_size=16,
+                show_progress_bar=True,
+            )
+            return np.asarray(matrix, dtype="float32").tolist()
+
+        if not texts:
+            return []
+        matrix = self._vectorizer.fit_transform(texts)
+        self._fitted = True
+        return self._normalize_dense(matrix.toarray()).tolist()
 
     def embed_query(self, query: str) -> list[float]:
-        return self._embed_text(query)
+        if self._model is not None:
+            vector = self._model.encode(
+                [query],
+                normalize_embeddings=True,
+                batch_size=1,
+                show_progress_bar=False,
+            )[0]
+            return np.asarray(vector, dtype="float32").tolist()
 
-    def _embed_text(self, text: str) -> list[float]:
-        vector = [0.0] * self.dimensions
-        tokens = tokenize_for_retrieval(text)
-        if not tokens:
-            return vector
+        if not self._fitted:
+            raise RuntimeError("EmbeddingService must fit chunk vectors before query embedding.")
+        matrix = self._vectorizer.transform([query])
+        return self._normalize_dense(matrix.toarray())[0].tolist()
 
-        for token in tokens:
-            index = self._token_index(token)
-            vector[index] += 1.0
-
-        return l2_normalize(vector)
-
-    def _token_index(self, token: str) -> int:
-        digest = sha1(token.encode("utf-8")).digest()
-        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
-        return value % self.dimensions
+    @staticmethod
+    def _normalize_dense(matrix: np.ndarray) -> np.ndarray:
+        dense = np.asarray(matrix, dtype="float32")
+        norms = np.linalg.norm(dense, axis=1, keepdims=True)
+        norms[norms == 0.0] = 1.0
+        return dense / norms

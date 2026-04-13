@@ -41,6 +41,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=220,
         help="How many characters of each chunk to print.",
     )
+    parser.add_argument(
+        "--embedding-model-path",
+        type=Path,
+        default=settings.local_embedding_model_dir,
+        help="Optional local SentenceTransformer model path.",
+    )
+    parser.add_argument(
+        "--index-dir",
+        type=Path,
+        default=None,
+        help="Optional persisted retrieval index directory.",
+    )
     return parser
 
 
@@ -50,8 +62,19 @@ def run_cli(
     top_k: int = 5,
     tables_only: bool = False,
     preview_chars: int = 220,
+    embedding_model_path: Path | None = None,
+    index_dir: Path | None = None,
 ) -> str:
-    service = SearchService.from_chunk_artifacts(chunks_dir)
+    if index_dir:
+        service = SearchService.from_persisted_index(
+            index_dir=index_dir,
+            embedding_model_path=str(embedding_model_path) if embedding_model_path else None,
+        )
+    else:
+        service = SearchService.from_chunk_artifacts(
+            chunks_dir,
+            embedding_model_path=str(embedding_model_path) if embedding_model_path else None,
+        )
     results = (
         service.search_tables(query, top_k=top_k)
         if tables_only
@@ -62,6 +85,7 @@ def run_cli(
         results=results,
         preview_chars=preview_chars,
         tables_only=tables_only,
+        embedding_backend=service.embedding_backend,
     )
 
 
@@ -70,9 +94,15 @@ def format_results(
     results: list[dict],
     preview_chars: int = 220,
     tables_only: bool = False,
+    embedding_backend: str = "unknown",
 ) -> str:
     mode = "tables" if tables_only else "chunks"
-    lines = [f'Query: "{query}"', f"Mode: {mode}", f"Hits: {len(results)}"]
+    lines = [
+        f'Query: "{query}"',
+        f"Mode: {mode}",
+        f"Embedding: {embedding_backend}",
+        f"Hits: {len(results)}",
+    ]
     if not results:
         lines.append("No results found.")
         return "\n".join(lines)
@@ -104,6 +134,8 @@ def main() -> None:
         top_k=args.top_k,
         tables_only=args.tables_only,
         preview_chars=args.preview_chars,
+        embedding_model_path=args.embedding_model_path,
+        index_dir=args.index_dir,
     )
     print(output)
 

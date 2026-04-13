@@ -136,6 +136,60 @@ class RetrievalFrameworkTest(unittest.TestCase):
         results = service.search_chunks("OpenAI 模型", top_k=1)
         self.assertEqual(results[0]["chunk"].chunk_id, "doc_demo_p1_c1")
 
+    def test_search_service_loads_persisted_index(self) -> None:
+        settings = get_settings()
+        chunks_dir = settings.artifacts_dir / "test_chunks_persist"
+        index_dir = settings.indexes_dir / "test_retrieval_cache"
+        chunks_dir.mkdir(parents=True, exist_ok=True)
+        index_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            payload = {
+                "doc_id": "doc_demo",
+                "title": "demo",
+                "source_file": "demo.pdf",
+                "chunk_count": 2,
+                "chunks": [
+                    {
+                        "chunk_id": "doc_demo_p1_c1",
+                        "page_no": 1,
+                        "chunk_type": "paragraph",
+                        "section_path": ["Document"],
+                        "metadata": {"page_no": 1},
+                        "text": "OpenAI 发布新模型",
+                    },
+                    {
+                        "chunk_id": "doc_demo_p1_c2",
+                        "page_no": 1,
+                        "chunk_type": "table",
+                        "section_path": ["Document"],
+                        "metadata": {"page_no": 1},
+                        "text": "比亚迪 销量 份额",
+                    },
+                ],
+            }
+            (chunks_dir / "doc_demo.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            builder = IndexBuilder(
+                embedding_service=EmbeddingService(dimensions=64),
+                vector_index=VectorIndex(),
+                bm25_index=Bm25Index(),
+            )
+            builder.build_and_persist(chunks_dir=chunks_dir, output_dir=index_dir)
+            service = SearchService.from_persisted_index(index_dir=index_dir)
+        finally:
+            for file_path in chunks_dir.glob("*.json"):
+                file_path.unlink()
+            chunks_dir.rmdir()
+            for file_path in index_dir.glob("*"):
+                file_path.unlink()
+            index_dir.rmdir()
+
+        results = service.search_tables("比亚迪 销量", top_k=1)
+        self.assertEqual(results[0]["chunk"].chunk_id, "doc_demo_p1_c2")
+
 
 if __name__ == "__main__":
     unittest.main()

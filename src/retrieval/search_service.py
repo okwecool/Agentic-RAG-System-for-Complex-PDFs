@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import pickle
+
+import numpy as np
 
 from src.indexing.bm25_index import Bm25Index
 from src.indexing.embeddings import EmbeddingService
@@ -27,6 +31,10 @@ class SearchService:
         self.fusion = fusion
         self.reranker = reranker
 
+    @property
+    def embedding_backend(self) -> str:
+        return getattr(self.embedding_service, "backend", "unknown")
+
     def search_chunks(
         self,
         query: str,
@@ -45,8 +53,11 @@ class SearchService:
         return self.search_chunks(query, top_k=top_k, chunk_types={"table"})
 
     @staticmethod
-    def from_chunk_artifacts(chunks_dir: Path) -> "SearchService":
-        embedding_service = EmbeddingService()
+    def from_chunk_artifacts(
+        chunks_dir: Path,
+        embedding_model_path: str | None = None,
+    ) -> "SearchService":
+        embedding_service = EmbeddingService(model_name_or_path=embedding_model_path)
         vector_index = VectorIndex()
         bm25_index = Bm25Index()
         builder = IndexBuilder(
@@ -55,6 +66,40 @@ class SearchService:
             bm25_index=bm25_index,
         )
         builder.build_from_chunk_files(chunks_dir)
+        return SearchService(
+            embedding_service=embedding_service,
+            vector_index=vector_index,
+            bm25_index=bm25_index,
+            fusion=HybridFusion(),
+            reranker=NoOpReranker(),
+        )
+
+    @staticmethod
+    def from_persisted_index(
+        index_dir: Path,
+        embedding_model_path: str | None = None,
+    ) -> "SearchService":
+        manifest_path = index_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Missing manifest: {manifest_path}")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        resolved_model_path = embedding_model_path or manifest.get("embedding_model_path")
+        embedding_service = EmbeddingService(model_name_or_path=resolved_model_path)
+        if manifest.get("embedding_backend") == "tfidf":
+            vectorizer_path = index_dir / "vectorizer.pkl"
+            if vectorizer_path.exists():
+                with vectorizer_path.open("rb") as handle:
+                    embedding_service._vectorizer = pickle.load(handle)
+                embedding_service._fitted = True
+        vector_index = VectorIndex()
+        bm25_index = Bm25Index()
+
+        chunks = IndexBuilder.load_chunks_metadata(index_dir / "chunks.json")
+        vectors = np.load(index_dir / "vectors.npy").astype("float32").tolist()
+        vector_index.add(chunks, vectors)
+        bm25_index.add(chunks)
+
         return SearchService(
             embedding_service=embedding_service,
             vector_index=vector_index,
