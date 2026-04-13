@@ -46,8 +46,21 @@ class TableExtractor:
         updated_blocks = list(blocks)
         for index, table in enumerate(table_finder.tables, start=1):
             bbox = tuple(float(value) for value in table.bbox)
+            if self._looks_like_decorative_table(table_bbox=bbox, pdf_page=pdf_page):
+                continue
             normalized_rows = self._normalize_rows(table.extract())
-            if not normalized_rows or self._looks_like_text_box(normalized_rows):
+            if not normalized_rows:
+                continue
+            if self._looks_like_footer_page_number_table(
+                rows=normalized_rows,
+                table_bbox=bbox,
+                pdf_page=pdf_page,
+                page_no=page_no,
+            ):
+                continue
+            if self._looks_like_text_box(normalized_rows):
+                continue
+            if self._looks_like_sparse_info_box(normalized_rows):
                 continue
 
             table_title, content_rows = self._split_title_row(normalized_rows)
@@ -202,6 +215,55 @@ class TableExtractor:
             return False
         average_length = sum(len(row[0]) for row in non_empty_rows) / len(non_empty_rows)
         return average_length >= 12
+
+    @staticmethod
+    def _looks_like_sparse_info_box(rows: list[list[str]]) -> bool:
+        row_count = len(rows)
+        column_count = max((len(row) for row in rows), default=0)
+        if row_count < 3 or column_count > 2:
+            return False
+
+        non_empty_counts = [sum(1 for cell in row if cell) for row in rows]
+        mostly_single_cell = sum(1 for count in non_empty_counts if count <= 1)
+        long_text_rows = sum(
+            1 for row in rows if sum(len(cell) for cell in row if cell) >= 14
+        )
+        has_email = any("@" in cell for row in rows for cell in row if cell)
+
+        if has_email and row_count <= 6:
+            return True
+        return mostly_single_cell / row_count >= 0.6 and long_text_rows / row_count >= 0.5
+
+    @staticmethod
+    def _looks_like_footer_page_number_table(
+        rows: list[list[str]],
+        table_bbox: tuple[float, float, float, float],
+        pdf_page: Any,
+        page_no: int,
+    ) -> bool:
+        if not hasattr(pdf_page, "rect"):
+            return False
+        page_width = float(pdf_page.rect.width)
+        page_height = float(pdf_page.rect.height)
+        if table_bbox[0] < page_width * 0.8 or table_bbox[1] < page_height * 0.9:
+            return False
+        flat_cells = [cell.strip() for row in rows for cell in row if cell and cell.strip()]
+        if len(flat_cells) != 1:
+            return False
+        return flat_cells[0] == str(page_no)
+
+    @staticmethod
+    def _looks_like_decorative_table(
+        table_bbox: tuple[float, float, float, float],
+        pdf_page: Any,
+    ) -> bool:
+        if not hasattr(pdf_page, "rect"):
+            return False
+        page_width = float(pdf_page.rect.width)
+        page_height = float(pdf_page.rect.height)
+        width = table_bbox[2] - table_bbox[0]
+        height = table_bbox[3] - table_bbox[1]
+        return width <= page_width * 0.08 and height >= page_height * 0.25
 
     @staticmethod
     def _rows_to_html(rows: list[list[str]], table_title: str | None = None) -> str:

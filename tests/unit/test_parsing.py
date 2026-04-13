@@ -121,6 +121,83 @@ class ParsingHelpersTest(unittest.TestCase):
             ["1 Overview", "1.1 Detail"],
         )
 
+    def test_cleaner_removes_chart_axis_noise_and_footer(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    width=600,
+                    height=800,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="36%",
+                            bbox=(10, 200, 30, 215),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b2",
+                            type="paragraph",
+                            text="2025-02",
+                            bbox=(20, 260, 90, 275),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b3",
+                            type="paragraph",
+                            text="Please refer to disclosures 1 / 3",
+                            bbox=(20, 760, 300, 790),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b4",
+                            type="paragraph",
+                            text="Main body paragraph",
+                            bbox=(150, 300, 500, 330),
+                            page_no=1,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertEqual(len(cleaned.pages[0].blocks), 1)
+        self.assertEqual(cleaned.pages[0].blocks[0].text, "Main body paragraph")
+
+    def test_cleaner_keeps_mid_page_body_with_legal_terms(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    width=600,
+                    height=800,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="This section discusses the legal statement requirements for vendors.",
+                            bbox=(80, 320, 520, 350),
+                            page_no=1,
+                        )
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertEqual(len(cleaned.pages[0].blocks), 1)
+        self.assertIn("legal statement requirements", cleaned.pages[0].blocks[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

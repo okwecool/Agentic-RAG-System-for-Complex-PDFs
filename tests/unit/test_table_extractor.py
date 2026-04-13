@@ -19,8 +19,9 @@ class FakeTableFinder:
 
 
 class FakePdfPage:
-    def __init__(self, tables) -> None:
+    def __init__(self, tables, width=600, height=800) -> None:
         self._tables = tables
+        self.rect = type("Rect", (), {"width": width, "height": height})()
 
     def find_tables(self):
         return FakeTableFinder(self._tables)
@@ -162,6 +163,63 @@ class TableExtractorTest(unittest.TestCase):
         enriched = extractor.extract(document)
         self.assertEqual(len(enriched.pages[0].blocks), 1)
         self.assertEqual(enriched.pages[0].blocks[0].type, "paragraph")
+
+    def test_extract_skips_footer_page_number_table(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[Page(page_no=1, blocks=[])],
+        )
+
+        extractor = TableExtractor(
+            fitz_module=FakeFitz(
+                [
+                    FakePdfPage(
+                        [
+                            FakeTable(
+                                bbox=(520, 760, 545, 790),
+                                rows=[["1"]],
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+
+        enriched = extractor.extract(document)
+        self.assertEqual(enriched.pages[0].blocks, [])
+
+    def test_extract_skips_sparse_contact_box(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[Page(page_no=1, blocks=[])],
+        )
+
+        extractor = TableExtractor(
+            fitz_module=FakeFitz(
+                [
+                    FakePdfPage(
+                        [
+                            FakeTable(
+                                bbox=(40, 200, 230, 270),
+                                rows=[
+                                    ["Analyst: Jane Doe", "S1050525070002"],
+                                    ["jane@example.com", ""],
+                                    ["Contact: John Roe", "S1050125060011"],
+                                    ["john@example.com", ""],
+                                ],
+                            )
+                        ]
+                    )
+                ]
+            )
+        )
+
+        enriched = extractor.extract(document)
+        self.assertEqual(enriched.pages[0].blocks, [])
 
 
 if __name__ == "__main__":
