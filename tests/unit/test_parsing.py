@@ -40,15 +40,15 @@ class ParsingHelpersTest(unittest.TestCase):
                 Page(
                     page_no=1,
                     blocks=[
-                        Block(block_id="b1", type="paragraph", text="行业研究 | 汽车行业"),
-                        Block(block_id="b2", type="paragraph", text="正文第一页"),
+                        Block(block_id="b1", type="paragraph", text="Report Header"),
+                        Block(block_id="b2", type="paragraph", text="First page body"),
                     ],
                 ),
                 Page(
                     page_no=2,
                     blocks=[
-                        Block(block_id="b3", type="paragraph", text="行业研究 | 汽车行业"),
-                        Block(block_id="b4", type="paragraph", text="正文第二页"),
+                        Block(block_id="b3", type="paragraph", text="Report Header"),
+                        Block(block_id="b4", type="paragraph", text="Second page body"),
                     ],
                 ),
             ],
@@ -57,9 +57,43 @@ class ParsingHelpersTest(unittest.TestCase):
         cleaned = DocumentCleaner().clean(document)
 
         self.assertEqual(len(cleaned.pages[0].blocks), 1)
-        self.assertEqual(cleaned.pages[0].blocks[0].text, "正文第一页")
+        self.assertEqual(cleaned.pages[0].blocks[0].text, "First page body")
         self.assertEqual(len(cleaned.pages[1].blocks), 1)
-        self.assertEqual(cleaned.pages[1].blocks[0].text, "正文第二页")
+        self.assertEqual(cleaned.pages[1].blocks[0].text, "Second page body")
+
+    def test_cleaner_merges_wrapped_non_heading_lines(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="heading",
+                            text="This is a wrapped body line that should not be a heading",
+                            bbox=(80, 100, 500, 114),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b2",
+                            type="heading",
+                            text="because it is just the next line of the same paragraph",
+                            bbox=(80, 118, 500, 132),
+                            page_no=1,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertEqual(len(cleaned.pages[0].blocks), 1)
+        self.assertEqual(cleaned.pages[0].blocks[0].type, "paragraph")
+        self.assertIn("same paragraph", cleaned.pages[0].blocks[0].text)
 
     def test_section_builder_tracks_nested_numeric_headings(self) -> None:
         document = Document(

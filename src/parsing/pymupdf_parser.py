@@ -1,4 +1,4 @@
-"""PyMuPDF-based parser skeleton."""
+"""PyMuPDF-based parser."""
 
 from pathlib import Path
 import re
@@ -19,10 +19,9 @@ class PyMuPdfParser:
             )
 
         source = Path(file_path)
-        title = source.stem
         document = Document(
             doc_id="pending",
-            title=title,
+            title=source.stem,
             source_file=file_path,
         )
 
@@ -40,7 +39,6 @@ class PyMuPdfParser:
                 )
         finally:
             pdf.close()
-
         return document
 
     @staticmethod
@@ -85,24 +83,22 @@ class PyMuPdfParser:
                 continue
 
             block_index += 1
-            block_type = self._infer_block_type(
-                text=text,
-                line_count=line_count,
-                max_size=max_size,
-                bold_ratio=(bold_spans / max(1, span_count)),
-            )
             bbox = raw_block.get("bbox")
             blocks.append(
                 Block(
                     block_id=build_block_id(page_no, block_index),
-                    type=block_type,
+                    type=self._infer_block_type(
+                        text=text,
+                        line_count=line_count,
+                        max_size=max_size,
+                        bold_ratio=(bold_spans / max(1, span_count)),
+                    ),
                     text=text,
                     bbox=tuple(float(value) for value in bbox) if bbox else None,
                     page_no=page_no,
                     source_span={"page_no": page_no, "block_index": block_index},
                 )
             )
-
         return blocks
 
     @staticmethod
@@ -114,7 +110,7 @@ class PyMuPdfParser:
     ) -> str:
         stripped = text.strip()
         if re.match(
-            r"^((\d{1,2}(?:\.\d+){0,3})|([一二三四五六七八九十]+、)|([IVXLC]+[\.、\)]?))\s+.+",
+            r"^(\d{1,2}(?:\.\d+){0,3}|[IVXLC]+[.)]?|[一二三四五六七八九十]+、)\s+.+",
             stripped,
         ) and line_count <= 3:
             return "heading"
@@ -124,7 +120,8 @@ class PyMuPdfParser:
             line_count <= 2
             and len(stripped) <= 40
             and not stripped.endswith(("。", "；", ";", "，", ",", "：", ":"))
-            and (max_size >= 14 or bold_ratio >= 0.85)
+            and max_size >= 14
+            and (bold_ratio >= 0.85 or len(stripped) <= 20)
         ):
             return "heading"
         return "paragraph"
