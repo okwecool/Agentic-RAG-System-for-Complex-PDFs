@@ -1,0 +1,7 @@
+[Examle Structure]
+- data
+    - source_pdf
+        - automobile
+        - electronic
+        - semi_conductor
+        - software
