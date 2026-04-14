@@ -89,8 +89,8 @@ chcp 65001
 
 当前 HTTP 调用链路如下：
 
-1. [`src/api/routes/qa.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/api/routes/qa.py) 接收请求
-2. [`src/generation/qa_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/qa_service.py) 负责编排召回与生成
+1. [`src/api/routes/qa.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/api/routes/qa.py) 接收请求。
+2. [`src/generation/qa_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/qa_service.py) 负责编排召回与生成。
 3. [`src/retrieval/search_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/search_service.py) 执行：
    - BM25 召回
    - 向量召回
@@ -98,11 +98,11 @@ chcp 65001
    - filter
    - dedup
    - collapse
-4. [`src/retrieval/context_packer.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/context_packer.py) 选择证据上下文
-5. [`src/generation/answer_generator.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/answer_generator.py) 构造 prompt 并调用模型
-6. [`src/generation/factory.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/factory.py) 创建 LLM provider
-7. [`src/generation/providers/openai_compatible.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/providers/openai_compatible.py) 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope
-8. [`src/generation/citation_auditor.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/citation_auditor.py) 做基础引用校验
+4. [`src/retrieval/context_packer.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/context_packer.py) 选择证据上下文。
+5. [`src/generation/answer_generator.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/answer_generator.py) 构造 prompt 并调用模型。
+6. [`src/generation/factory.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/factory.py) 创建 LLM provider。
+7. [`src/generation/providers/openai_compatible.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/providers/openai_compatible.py) 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope。
+8. [`src/generation/citation_auditor.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/citation_auditor.py) 做基础引用校验。
 
 ### 1.5 当前检索加载路径
 
@@ -114,6 +114,46 @@ chcp 65001
 当前本地 embedding 模型：
 
 - `E:\Models\bge-base-zh-v1.5`
+
+### 1.6 当前模块关系图
+
+```mermaid
+flowchart LR
+    A["PDF 解析与切片"] --> B["Chunk 产物<br/>artifacts/chunks"]
+    B --> C["索引构建<br/>BM25 + Embedding + Vector"]
+    C --> D["SearchService<br/>召回编排"]
+    D --> E["ContextPacker"]
+    E --> F["AnswerGenerator"]
+    F --> G["LLM Provider<br/>OpenAI-compatible / Local Stub"]
+    D --> H["CitationAuditor"]
+    F --> H
+    H --> I["QaService"]
+    I --> J["CLI / HTTP API"]
+```
+
+### 1.7 当前分层职责
+
+当前系统可以粗分为五层：
+
+1. Ingestion 层
+- 负责 PDF 解析、清洗、section 构建、chunk 生成
+- 产出 `artifacts/parsed` 与 `artifacts/chunks`
+
+2. Indexing 层
+- 负责构建 BM25、embedding、向量索引以及持久化索引
+- 当前 embedding 使用本地 `bge-base-zh-v1.5`
+
+3. Retrieval 层
+- 负责召回、融合、过滤、去重与局部聚合
+- 当前核心类是 `SearchService`
+
+4. Generation 层
+- 负责上下文拼装、LLM 调用、答案生成与基础引用校验
+- 当前核心类是 `QaService`
+
+5. Interface 层
+- 对外提供命令行与 HTTP 能力
+- 当前包括 `scripts/*.ps1`、`src/generation/cli.py`、`src/api/routes/qa.py`
 
 ---
 
@@ -182,6 +222,23 @@ chcp 65001
 - 图表证据仍然偏“弱结构化”
 - 财务、指标、时间类问题仍容易受到图表碎片干扰
 - 复杂 PDF 中的高价值信息很多还只是文本碎片，并未被结构化建模
+
+### 2.4 当前优化的阶段性结论
+
+目前可以明确下来的阶段性结论有三点：
+
+1. 检索问题并不只是 embedding 问题
+- 即便换成了更好的本地 embedding，证据质量差时仍会召回到不适合作答的 chunk
+- 因此问题核心仍然是 chunk 质量、版面理解和证据表示方式
+
+2. `SearchService` 适合做通用排序修正，不适合承载领域知识
+- retrieval core 可以做通用 signal
+- 但不应该逐步演变成“业务规则堆栈”
+
+3. 当前系统已经具备验证后续优化的基础设施
+- CLI 可直接验召回结果
+- API 可端到端验证问答输出
+- 持久化索引可重复对比优化前后效果
 
 ---
 
@@ -255,6 +312,39 @@ chcp 65001
 - reranker
 - query planning
 
+### 3.5 未来建议的分层边界
+
+后续推荐按下面的边界继续演进：
+
+1. Retrieval Core
+- 只做通用召回与通用排序
+- 只依赖 query 词面特征、chunk 结构特征、页面通用模式
+
+2. Reranker
+- 负责更强的相关性判断
+- 可以逐步承接更复杂的语义排序
+
+3. Structured Extraction
+- 负责把表格、图表、半结构化页面转成更适合检索和问答的对象
+
+4. Domain Profile
+- 负责行业词典、指标体系、实体别名、垂直语义扩展
+- 必须与 retrieval core 解耦
+
+5. Query Planning
+- 负责识别问题类型
+- 决定调用哪条证据链路
+- 决定偏向正文、表格还是结构化记录
+
+### 3.6 为什么当前要坚持这个边界
+
+当前阶段坚持边界的原因主要有：
+
+- 避免 SearchService 越来越难维护
+- 避免一次临时优化污染整体架构
+- 保证通用 PDF 底座可以服务多个领域
+- 为后续 finance profile、legal profile 等扩展预留清晰入口
+
 ---
 
 ## 4. 后续优化方向
@@ -317,6 +407,33 @@ chcp 65001
 3. 实现表格 / 图表半结构化抽取
 4. 增强页面分区与布局理解
 5. 引入 domain profile
+
+### 4.5 每个方向解决什么问题
+
+1. 轻量 reranker
+- 解决“召回到了，但排序不够准”
+
+2. Parent-child chunking
+- 解决“小 chunk 检索准、大 chunk 回答全”的矛盾
+
+3. 表格 / 图表半结构化抽取
+- 解决“信息在图表里，但现在只是碎文本，机器很难稳定利用”
+
+4. 页面分区与布局理解
+- 解决“复杂版面下，侧栏、图表、封面、装饰信息混入正文”的问题
+
+5. Domain profile
+- 解决“不同领域对实体、指标、术语理解差异大”的问题
+
+### 4.6 推荐的近期落地项
+
+如果按当前项目状态，我建议近期优先落地：
+
+1. 轻量 reranker
+2. parent-child chunking 设计与第一版实现
+3. 图表 / 表格区域的半结构化元数据抽取
+
+原因是这三项能直接改善当前最明显的证据质量问题，同时又不会破坏现有 API 与检索主链路。
 
 ---
 
