@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from src.config.settings import _load_env_file
+from src.config.settings import _load_env_file, _optional_path_from_env, _path_from_env
 
 
 class SettingsTests(unittest.TestCase):
@@ -29,3 +29,37 @@ class SettingsTests(unittest.TestCase):
                 os.environ.pop("DASHSCOPE_BASE_URL", None)
             else:
                 os.environ["DASHSCOPE_BASE_URL"] = original_url
+
+    def test_optional_path_from_env_prefers_env_value(self) -> None:
+        original_value = os.environ.get("LOCAL_EMBEDDING_MODEL_DIR")
+        try:
+            os.environ["LOCAL_EMBEDDING_MODEL_DIR"] = r"D:\Models\demo-embed"
+            resolved = _optional_path_from_env(
+                "LOCAL_EMBEDDING_MODEL_DIR",
+                default=Path(r"E:\Models\bge-base-zh-v1.5"),
+            )
+            self.assertEqual(Path(r"D:\Models\demo-embed"), resolved)
+        finally:
+            if original_value is None:
+                os.environ.pop("LOCAL_EMBEDDING_MODEL_DIR", None)
+            else:
+                os.environ["LOCAL_EMBEDDING_MODEL_DIR"] = original_value
+
+    def test_path_from_env_resolves_relative_to_base_dir(self) -> None:
+        original_value = os.environ.get("RETRIEVAL_INDEX_DIR")
+        try:
+            os.environ["RETRIEVAL_INDEX_DIR"] = r"indexes\custom_cache"
+            resolved = _path_from_env(
+                "RETRIEVAL_INDEX_DIR",
+                default=Path("indexes/default"),
+                base_dir=Path(r"E:\Project\Agentic_Project\Agentic-RAG-System-for-Complex-PDFs"),
+            )
+            self.assertEqual(
+                Path(r"E:\Project\Agentic_Project\Agentic-RAG-System-for-Complex-PDFs\indexes\custom_cache"),
+                resolved,
+            )
+        finally:
+            if original_value is None:
+                os.environ.pop("RETRIEVAL_INDEX_DIR", None)
+            else:
+                os.environ["RETRIEVAL_INDEX_DIR"] = original_value
