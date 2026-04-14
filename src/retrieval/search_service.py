@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
-import pickle
+from collections import defaultdict
 
 import numpy as np
 
@@ -47,7 +48,9 @@ class SearchService:
         fused = self.fusion.fuse(bm25_results, vector_results, top_k=max(top_k * 3, top_k))
         filtered = self._filter_results(fused, chunk_types=chunk_types)
         reranked = self.reranker.rerank(query, filtered)
-        return reranked[:top_k]
+        deduplicated = self._deduplicate_results(reranked, chunk_types=chunk_types)
+        collapsed = self._collapse_results(deduplicated, chunk_types=chunk_types)
+        return collapsed[:top_k]
 
     def search_tables(self, query: str, top_k: int = 10) -> list[dict]:
         return self.search_chunks(query, top_k=top_k, chunk_types={"table"})
@@ -86,12 +89,7 @@ class SearchService:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         resolved_model_path = embedding_model_path or manifest.get("embedding_model_path")
         embedding_service = EmbeddingService(model_name_or_path=resolved_model_path)
-        if manifest.get("embedding_backend") == "tfidf":
-            vectorizer_path = index_dir / "vectorizer.pkl"
-            if vectorizer_path.exists():
-                with vectorizer_path.open("rb") as handle:
-                    embedding_service._vectorizer = pickle.load(handle)
-                embedding_service._fitted = True
+        embedding_service.load_state(index_dir)
         vector_index = VectorIndex()
         bm25_index = Bm25Index()
 
@@ -113,3 +111,117 @@ class SearchService:
         if not chunk_types:
             return results
         return [item for item in results if item["chunk"].chunk_type in chunk_types]
+
+    @classmethod
+    def _deduplicate_results(
+        cls,
+        results: list[dict],
+        chunk_types: set[str] | None = None,
+    ) -> list[dict]:
+        deduplicated: list[dict] = []
+        seen_text_signatures: set[str] = set()
+
+        for item in results:
+            chunk = item["chunk"]
+            text_signature = cls._text_signature(chunk.text)
+            if text_signature in seen_text_signatures:
+                continue
+            if cls._is_redundant_heading(item, deduplicated, chunk_types=chunk_types):
+                continue
+            seen_text_signatures.add(text_signature)
+            deduplicated.append(item)
+        return deduplicated
+
+    @classmethod
+    def _collapse_results(
+        cls,
+        results: list[dict],
+        chunk_types: set[str] | None = None,
+    ) -> list[dict]:
+        grouped: dict[tuple[str, int, tuple[str, ...]], list[dict]] = defaultdict(list)
+        for item in results:
+            chunk = item["chunk"]
+            key = (chunk.doc_id, chunk.page_no, tuple(chunk.section_path))
+            grouped[key].append(item)
+
+        collapsed: list[dict] = []
+        for items in grouped.values():
+            representative = max(items, key=cls._group_sort_key)
+            collapsed.append(representative)
+
+        collapsed.sort(key=cls._group_sort_key, reverse=True)
+        return collapsed
+
+    @classmethod
+    def _is_redundant_heading(
+        cls,
+        candidate: dict,
+        accepted: list[dict],
+        chunk_types: set[str] | None = None,
+    ) -> bool:
+        chunk = candidate["chunk"]
+        if chunk.chunk_type != "heading":
+            return False
+        if chunk_types == {"table"}:
+            return False
+
+        candidate_text = cls._normalize_text(chunk.text)
+        if len(candidate_text) > 64:
+            return False
+
+        candidate_scope = (chunk.doc_id, chunk.page_no, tuple(chunk.section_path))
+        for existing in accepted:
+            existing_chunk = existing["chunk"]
+            existing_scope = (
+                existing_chunk.doc_id,
+                existing_chunk.page_no,
+                tuple(existing_chunk.section_path),
+            )
+            if existing_scope != candidate_scope:
+                continue
+            if existing_chunk.chunk_type == "heading":
+                continue
+            existing_text = cls._normalize_text(existing_chunk.text)
+            if candidate_text and candidate_text in existing_text:
+                return True
+        return False
+
+    @staticmethod
+    def _text_signature(text: str) -> str:
+        normalized = SearchService._normalize_text(text)
+        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        return " ".join(text.lower().split())
+
+    @staticmethod
+    def _group_sort_key(item: dict) -> tuple[int, float, int]:
+        chunk = item["chunk"]
+        type_priority = {
+            "paragraph": 3,
+            "mixed": 3,
+            "table": 2,
+            "figure_caption": 2,
+            "heading": 1,
+        }.get(chunk.chunk_type, 0)
+        text_length = len(chunk.text.strip())
+        score = float(item.get("score", 0.0)) - SearchService._toc_penalty(chunk)
+        return (type_priority, score, text_length)
+
+    @staticmethod
+    def _toc_penalty(chunk) -> float:
+        title = SearchService._normalize_text(" ".join(chunk.section_path))
+        text = SearchService._normalize_text(chunk.text[:120])
+        haystack = f"{title} {text}"
+        toc_markers = (
+            "目录",
+            "图表目录",
+            "contents",
+            "table of contents",
+            "figure index",
+            "chart index",
+        )
+        if any(marker in haystack for marker in toc_markers):
+            return 0.02
+        return 0.0

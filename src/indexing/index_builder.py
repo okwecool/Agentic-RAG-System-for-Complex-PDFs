@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pickle
 
 import numpy as np
 
@@ -44,10 +43,7 @@ class IndexBuilder:
 
         self._write_chunks_metadata(chunks, output_dir / "chunks.json")
         np.save(output_dir / "vectors.npy", np.asarray(vectors, dtype="float32"))
-
-        if getattr(self.embedding_service, "backend", "") == "tfidf":
-            with (output_dir / "vectorizer.pkl").open("wb") as handle:
-                pickle.dump(getattr(self.embedding_service, "_vectorizer", None), handle)
+        self.embedding_service.save_state(output_dir)
 
         manifest = {
             "chunk_count": len(chunks),
