@@ -1,9 +1,13 @@
-"""Reranker protocol."""
+"""Reranker provider protocol."""
 
-from typing import Any, Protocol
+from __future__ import annotations
+
+from typing import Protocol
 
 
-class Reranker(Protocol):
-    def rerank(self, query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Reorder retrieved candidates."""
+class RerankerProvider(Protocol):
+    backend: str
+    model_name: str
 
+    def rerank(self, query: str, candidates: list[dict]) -> list[dict]:
+        """Return reranked candidates."""

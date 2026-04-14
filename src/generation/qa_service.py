@@ -11,6 +11,7 @@ from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.factory import create_llm_provider
 from src.retrieval.context_packer import ContextPacker
+from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.search_service import SearchService
 
 
@@ -94,16 +95,22 @@ class QaService:
 
 
 def _create_search_service(settings: Settings) -> SearchService:
+    fusion = create_hybrid_fusion(settings)
+    reranker = create_reranker(settings)
     if settings.retrieval_index_dir and settings.retrieval_index_dir.exists():
         return SearchService.from_persisted_index(
             index_dir=settings.retrieval_index_dir,
             embedding_model_path=str(settings.local_embedding_model_dir)
             if settings.local_embedding_model_dir
             else None,
+            fusion=fusion,
+            reranker=reranker,
         )
     return SearchService.from_chunk_artifacts(
         chunks_dir=settings.chunks_dir,
         embedding_model_path=str(settings.local_embedding_model_dir)
         if settings.local_embedding_model_dir
         else None,
+        fusion=fusion,
+        reranker=reranker,
     )

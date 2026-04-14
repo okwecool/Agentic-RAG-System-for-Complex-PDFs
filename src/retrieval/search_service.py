@@ -12,6 +12,8 @@ from src.indexing.bm25_index import Bm25Index
 from src.indexing.embeddings import EmbeddingService
 from src.indexing.index_builder import IndexBuilder
 from src.indexing.vector_index import VectorIndex
+from src.domain.protocols.reranker import RerankerProvider
+from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.hybrid_fusion import HybridFusion
 from src.retrieval.rerank import NoOpReranker
 from src.retrieval.signals import QuerySignature, SearchSignals
@@ -24,7 +26,7 @@ class SearchService:
         vector_index: VectorIndex,
         bm25_index: Bm25Index,
         fusion: HybridFusion,
-        reranker: NoOpReranker,
+        reranker: RerankerProvider,
     ) -> None:
         self.embedding_service = embedding_service
         self.vector_index = vector_index
@@ -64,6 +66,8 @@ class SearchService:
     def from_chunk_artifacts(
         chunks_dir: Path,
         embedding_model_path: str | None = None,
+        fusion: HybridFusion | None = None,
+        reranker: RerankerProvider | None = None,
     ) -> "SearchService":
         embedding_service = EmbeddingService(model_name_or_path=embedding_model_path)
         vector_index = VectorIndex()
@@ -78,14 +82,16 @@ class SearchService:
             embedding_service=embedding_service,
             vector_index=vector_index,
             bm25_index=bm25_index,
-            fusion=HybridFusion(),
-            reranker=NoOpReranker(),
+            fusion=fusion or HybridFusion(),
+            reranker=reranker or NoOpReranker(),
         )
 
     @staticmethod
     def from_persisted_index(
         index_dir: Path,
         embedding_model_path: str | None = None,
+        fusion: HybridFusion | None = None,
+        reranker: RerankerProvider | None = None,
     ) -> "SearchService":
         manifest_path = index_dir / "manifest.json"
         if not manifest_path.exists():
@@ -107,8 +113,8 @@ class SearchService:
             embedding_service=embedding_service,
             vector_index=vector_index,
             bm25_index=bm25_index,
-            fusion=HybridFusion(),
-            reranker=NoOpReranker(),
+            fusion=fusion or HybridFusion(),
+            reranker=reranker or NoOpReranker(),
         )
 
     @staticmethod

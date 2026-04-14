@@ -1,8 +1,5 @@
-"""Reranker placeholder."""
+"""Backward-compatible reranker exports."""
 
+from src.retrieval.rerankers.noop import NoOpReranker
 
-class NoOpReranker:
-    def rerank(self, query: str, candidates: list[dict]) -> list[dict]:
-        del query
-        return candidates
-
+__all__ = ["NoOpReranker"]
