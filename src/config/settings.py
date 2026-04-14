@@ -17,6 +17,12 @@ class Settings:
     manifests_dir: Path
     indexes_dir: Path
     local_embedding_model_dir: Path | None = None
+    retrieval_index_dir: Path | None = None
+    llm_provider: str = "openai_compatible"
+    llm_model_name: str = "qwen-plus"
+    dashscope_api_key: str | None = None
+    dashscope_base_url: str | None = None
+    qa_top_k: int = 6
     debug: bool = False
 
 
@@ -25,6 +31,8 @@ def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     data_dir = project_root / "data"
     artifacts_dir = project_root / "artifacts"
+    indexes_dir = project_root / "indexes"
+    retrieval_index_dir = indexes_dir / "retrieval_cache" / "bge_base_zh_v1_5"
     return Settings(
         project_root=project_root,
         data_dir=data_dir,
@@ -33,7 +41,13 @@ def get_settings() -> Settings:
         parsed_dir=artifacts_dir / "parsed",
         chunks_dir=artifacts_dir / "chunks",
         manifests_dir=artifacts_dir / "manifests",
-        indexes_dir=project_root / "indexes",
+        indexes_dir=indexes_dir,
         local_embedding_model_dir=Path(r"E:\Models\bge-base-zh-v1.5"),
+        retrieval_index_dir=retrieval_index_dir,
+        llm_provider=os.getenv("LLM_PROVIDER", "openai_compatible"),
+        llm_model_name=os.getenv("DASHSCOPE_MODEL", "qwen-plus"),
+        dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
+        dashscope_base_url=os.getenv("DASHSCOPE_BASE_URL"),
+        qa_top_k=int(os.getenv("QA_TOP_K", "6")),
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )
