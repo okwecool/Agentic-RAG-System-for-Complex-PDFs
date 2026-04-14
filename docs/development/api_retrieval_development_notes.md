@@ -21,6 +21,14 @@ DASHSCOPE_MODEL=qwen-plus
 
 这些配置由 `src/config/settings.py` 自动加载。
 
+当前与生成相关的核心配置包括：
+
+- `LLM_PROVIDER`
+- `LLM_PROMPT_FAMILY`
+- `DASHSCOPE_API_KEY`
+- `DASHSCOPE_BASE_URL`
+- `DASHSCOPE_MODEL`
+
 ### 1.2 HTTP API
 
 当前问答接口：
@@ -108,10 +116,30 @@ chcp 65001
 4. `src/retrieval/context_packer.py` 选择证据上下文。
 5. `src/generation/answer_generator.py` 构造 prompt 并调用模型。
 6. `src/generation/factory.py` 创建 LLM provider。
-7. `src/generation/providers/openai_compatible.py` 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope。
-8. `src/generation/citation_auditor.py` 做基础引用校验。
+7. `src/generation/prompts/factory.py` 选择 prompt family。
+8. `src/generation/providers/openai_compatible.py` 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope。
+9. `src/generation/citation_auditor.py` 做基础引用校验。
 
-### 1.5 当前检索加载路径
+### 1.5 Prompt Family
+
+当前 prompt 已经从 `AnswerGenerator` 中抽离，放到 `src/generation/prompts` 下统一管理。
+
+目前支持：
+
+- `auto`
+  - 自动根据模型名选择 prompt family
+- `zh_generic`
+  - 通用中文问答模板
+- `qwen`
+  - 针对 Qwen 风格单独准备的中文模板
+
+当前建议：
+
+- 如果模型主要是 Qwen 系列，优先使用 `qwen`
+- 如果后续接其他中文模型，先用 `zh_generic`
+- 如果希望配置最少，可以保留 `auto`
+
+### 1.6 当前检索加载路径
 
 当前检索层的优先加载顺序：
 
@@ -120,7 +148,7 @@ chcp 65001
 
 当前 embedding 模型可通过 `LOCAL_EMBEDDING_MODEL_DIR` 配置。
 
-### 1.6 当前模块关系图
+### 1.7 当前模块关系图
 
 ```mermaid
 flowchart LR
@@ -136,7 +164,7 @@ flowchart LR
     I --> J["CLI / HTTP API"]
 ```
 
-### 1.7 当前分层职责
+### 1.8 当前分层职责
 
 当前系统可以粗分为五层：
 
