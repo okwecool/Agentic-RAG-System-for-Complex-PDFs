@@ -35,6 +35,7 @@ class QaResponse(BaseModel):
     answer: str
     confidence: str
     model: str | None = None
+    prompt_family: str | None = None
     embedding_backend: str
     retrieved_count: int
     citations: list[CitationResponse]

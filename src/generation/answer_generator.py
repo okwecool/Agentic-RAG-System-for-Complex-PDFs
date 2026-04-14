@@ -3,29 +3,32 @@
 from __future__ import annotations
 
 from src.domain.protocols.llm import LlmProvider
+from src.generation.prompts.base import BasePromptTemplate
 
 
 class AnswerGenerator:
-    def __init__(self, llm_provider: LlmProvider) -> None:
+    def __init__(
+        self,
+        llm_provider: LlmProvider,
+        prompt_template: BasePromptTemplate,
+    ) -> None:
         self.llm_provider = llm_provider
+        self.prompt_template = prompt_template
 
     def generate(self, query: str, evidence: list[dict]) -> dict:
         if not evidence:
             return {
-                "answer": "I could not find enough supporting evidence in the indexed PDFs.",
+                "answer": "根据当前检索到的 PDF 证据，暂时无法确定答案。",
                 "claims": [],
                 "confidence": "low",
                 "model": self.llm_provider.model_name,
+                "prompt_family": self.prompt_template.family,
             }
 
-        prompt = self._build_user_prompt(query=query, evidence=evidence)
+        prompt = self.prompt_template.build(query=query, evidence=evidence)
         answer = self.llm_provider.generate(
-            system_prompt=(
-                "You answer questions using only the provided PDF evidence. "
-                "Be concise, avoid unsupported claims, and explicitly mention uncertainty "
-                "when the evidence is incomplete."
-            ),
-            user_prompt=prompt,
+            system_prompt=prompt.system_prompt,
+            user_prompt=prompt.user_prompt,
         )
         supporting_chunk_ids = [
             item["chunk"].chunk_id for item in evidence if "chunk" in item
@@ -40,23 +43,5 @@ class AnswerGenerator:
             ],
             "confidence": "medium" if supporting_chunk_ids else "low",
             "model": self.llm_provider.model_name,
+            "prompt_family": self.prompt_template.family,
         }
-
-    @staticmethod
-    def _build_user_prompt(query: str, evidence: list[dict]) -> str:
-        context_lines = []
-        for idx, item in enumerate(evidence, start=1):
-            chunk = item["chunk"]
-            label = f"C{idx}"
-            section = " > ".join(chunk.section_path) if chunk.section_path else "N/A"
-            context_lines.append(
-                f"[{label}] doc_id={chunk.doc_id} page={chunk.page_no} "
-                f"type={chunk.chunk_type} section={section}\n{chunk.text.strip()}"
-            )
-        context = "\n\n".join(context_lines)
-        return (
-            f"Question:\n{query}\n\n"
-            "Evidence:\n"
-            f"{context}\n\n"
-            "Write a concise answer in Chinese. If the evidence is insufficient, say so clearly."
-        )

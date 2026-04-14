@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import unittest
 
 from src.generation.answer_generator import AnswerGenerator
+from src.generation.prompts.qwen import QwenPromptTemplate
 from src.generation.qa_service import QaService
 from src.generation.citation_auditor import CitationAuditor
 from src.retrieval.context_packer import ContextPacker
@@ -45,7 +46,7 @@ class FakeSearchService:
 class GenerationTests(unittest.TestCase):
     def test_answer_generator_builds_prompt_with_evidence(self) -> None:
         provider = FakeLlmProvider()
-        generator = AnswerGenerator(provider)
+        generator = AnswerGenerator(provider, QwenPromptTemplate())
         evidence = [
             {
                 "chunk": FakeChunk(
@@ -63,7 +64,9 @@ class GenerationTests(unittest.TestCase):
 
         self.assertIn("Sora 2 有什么升级", provider.last_user_prompt)
         self.assertIn("原生音视频同步", provider.last_user_prompt)
+        self.assertIn("根据当前证据无法确定", provider.last_user_prompt)
         self.assertEqual("fake-model", result["model"])
+        self.assertEqual("qwen", result["prompt_family"])
 
     def test_qa_service_returns_citations_and_evidence(self) -> None:
         provider = FakeLlmProvider()
@@ -83,7 +86,7 @@ class GenerationTests(unittest.TestCase):
         ]
         service = QaService(
             search_service=FakeSearchService(results),
-            answer_generator=AnswerGenerator(provider),
+            answer_generator=AnswerGenerator(provider, QwenPromptTemplate()),
             citation_auditor=CitationAuditor(),
             context_packer=ContextPacker(),
             top_k=3,
@@ -96,3 +99,4 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(1, len(result["citations"]))
         self.assertEqual("c1", result["citations"][0]["chunk_id"])
         self.assertEqual("fake-embedding", result["embedding_backend"])
+        self.assertEqual("qwen", result["prompt_family"])

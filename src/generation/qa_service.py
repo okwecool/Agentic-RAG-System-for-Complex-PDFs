@@ -11,6 +11,7 @@ from src.domain.models.citation import Citation
 from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.factory import create_llm_provider
+from src.generation.prompts.factory import create_prompt_template
 from src.retrieval.context_packer import ContextPacker
 from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.search_service import SearchService
@@ -30,9 +31,13 @@ class QaService:
     def from_settings(cls, settings: Settings) -> "QaService":
         search_service = _create_search_service(settings)
         llm_provider = create_llm_provider(settings)
+        prompt_template = create_prompt_template(settings)
         return cls(
             search_service=search_service,
-            answer_generator=AnswerGenerator(llm_provider=llm_provider),
+            answer_generator=AnswerGenerator(
+                llm_provider=llm_provider,
+                prompt_template=prompt_template,
+            ),
             citation_auditor=CitationAuditor(),
             context_packer=ContextPacker(),
             top_k=settings.qa_top_k,
@@ -71,6 +76,7 @@ class QaService:
             "answer": generation["answer"],
             "confidence": audit.get("final_confidence", generation.get("confidence", "low")),
             "model": generation.get("model"),
+            "prompt_family": generation.get("prompt_family"),
             "embedding_backend": self.search_service.embedding_backend,
             "retrieved_count": len(retrieved),
             "citations": [asdict(citation) for citation in citations],

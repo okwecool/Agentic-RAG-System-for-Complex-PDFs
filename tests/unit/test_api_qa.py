@@ -20,6 +20,7 @@ class StubQaService:
             "answer": "测试答案",
             "confidence": "medium",
             "model": "stub-model",
+            "prompt_family": "qwen",
             "embedding_backend": "stub-embedding",
             "retrieved_count": 1,
             "citations": [
@@ -62,5 +63,6 @@ class ApiQaTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual("测试答案", payload["answer"])
         self.assertEqual("stub-model", payload["model"])
+        self.assertEqual("qwen", payload["prompt_family"])
         self.assertEqual(1, len(payload["citations"]))
         app.dependency_overrides.clear()
