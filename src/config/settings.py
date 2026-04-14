@@ -29,6 +29,7 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
+    _load_env_file(project_root / ".env")
     data_dir = project_root / "data"
     artifacts_dir = project_root / "artifacts"
     indexes_dir = project_root / "indexes"
@@ -51,3 +52,18 @@ def get_settings() -> Settings:
         qa_top_k=int(os.getenv("QA_TOP_K", "6")),
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )
+
+
+def _load_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        cleaned = value.strip().strip('"').strip("'")
+        os.environ[key] = cleaned
