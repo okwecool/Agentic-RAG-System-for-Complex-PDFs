@@ -91,6 +91,110 @@ class RetrievalFrameworkTest(unittest.TestCase):
         self.assertEqual(table_results[0]["chunk"].chunk_id, "c2")
         self.assertTrue(all(item["chunk"].chunk_type == "table" for item in table_results))
 
+    def test_search_service_deduplicates_redundant_heading_results(self) -> None:
+        service = self._build_service()
+        heading_chunk = Chunk(
+            chunk_id="c4",
+            doc_id="doc1",
+            text="OpenAI 推出 Sora 2",
+            page_no=3,
+            chunk_type="heading",
+            section_path=["2 Sora 2"],
+            metadata={"page_no": 3},
+        )
+        paragraph_chunk = Chunk(
+            chunk_id="c5",
+            doc_id="doc1",
+            text="OpenAI 推出 Sora 2，并增强视频生成与音频同步能力。",
+            page_no=3,
+            chunk_type="paragraph",
+            section_path=["2 Sora 2"],
+            metadata={"page_no": 3},
+        )
+
+        deduplicated = service._deduplicate_results(
+            [
+                {"chunk": paragraph_chunk, "score": 1.0, "sources": ["bm25"]},
+                {"chunk": heading_chunk, "score": 0.9, "sources": ["bm25"]},
+            ]
+        )
+
+        self.assertEqual(len(deduplicated), 1)
+        self.assertEqual(deduplicated[0]["chunk"].chunk_id, "c5")
+
+    def test_search_service_collapses_same_section_results(self) -> None:
+        service = self._build_service()
+        heading_chunk = Chunk(
+            chunk_id="c6",
+            doc_id="doc1",
+            text="2. OpenAI Sora 2 性能实现卓越升级",
+            page_no=5,
+            chunk_type="heading",
+            section_path=["2. OpenAI Sora 2 性能实现卓越升级"],
+            metadata={"page_no": 5},
+        )
+        paragraph_chunk = Chunk(
+            chunk_id="c7",
+            doc_id="doc1",
+            text="相较于初代 Sora，Sora 2 首先解决无声局限，实现原生音视频同步。",
+            page_no=5,
+            chunk_type="paragraph",
+            section_path=["2. OpenAI Sora 2 性能实现卓越升级"],
+            metadata={"page_no": 5},
+        )
+        table_chunk = Chunk(
+            chunk_id="c8",
+            doc_id="doc1",
+            text="表头: 画面内容 | Sora | Sora 2 自动生成音效",
+            page_no=5,
+            chunk_type="table",
+            section_path=["2. OpenAI Sora 2 性能实现卓越升级"],
+            metadata={"page_no": 5},
+        )
+
+        collapsed = service._collapse_results(
+            [
+                {"chunk": heading_chunk, "score": 0.95, "sources": ["bm25"]},
+                {"chunk": paragraph_chunk, "score": 0.90, "sources": ["vector"]},
+                {"chunk": table_chunk, "score": 0.92, "sources": ["bm25", "vector"]},
+            ]
+        )
+
+        self.assertEqual(len(collapsed), 1)
+        self.assertEqual(collapsed[0]["chunk"].chunk_id, "c7")
+
+    def test_search_service_downweights_toc_like_chunks(self) -> None:
+        service = self._build_service()
+        toc_chunk = Chunk(
+            chunk_id="c9",
+            doc_id="doc1",
+            text="目录 OpenAI Sora 2 性能实现卓越升级",
+            page_no=2,
+            chunk_type="paragraph",
+            section_path=["目录"],
+            metadata={"page_no": 2},
+        )
+        body_chunk = Chunk(
+            chunk_id="c10",
+            doc_id="doc1",
+            text="OpenAI Sora 2 首先解决无声局限，实现原生音视频同步。",
+            page_no=5,
+            chunk_type="paragraph",
+            section_path=["2. OpenAI Sora 2 性能实现卓越升级"],
+            metadata={"page_no": 5},
+        )
+
+        ranked = sorted(
+            [
+                {"chunk": toc_chunk, "score": 0.031, "sources": ["bm25"]},
+                {"chunk": body_chunk, "score": 0.025, "sources": ["vector"]},
+            ],
+            key=service._group_sort_key,
+            reverse=True,
+        )
+
+        self.assertEqual(ranked[0]["chunk"].chunk_id, "c10")
+
     def test_index_builder_loads_chunk_artifacts(self) -> None:
         settings = get_settings()
         chunks_dir = settings.artifacts_dir / "test_chunks"

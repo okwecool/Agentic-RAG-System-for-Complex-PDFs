@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 
 from src.config.settings import get_settings
 from src.retrieval.search_service import SearchService
@@ -137,6 +138,10 @@ def main() -> None:
         embedding_model_path=args.embedding_model_path,
         index_dir=args.index_dir,
     )
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     print(output)
 
 
