@@ -1,5 +1,12 @@
 # Chunk 异常巡检报告
 
+## 相关文档
+
+- 开发计划：[`../development/development_plan.md`](../development/development_plan.md)
+- API 与召回开发说明：[`../development/api_retrieval_development_notes.md`](../development/api_retrieval_development_notes.md)
+- 项目整体待优化文档：[`project_optimization_backlog.md`](project_optimization_backlog.md)
+- 当前最小化 RAG 实现缺口分析：[`current_rag_gap_analysis.md`](current_rag_gap_analysis.md)
+
 ## 1. 巡检范围
 
 本轮巡检基于以下产物：

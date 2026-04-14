@@ -81,13 +81,13 @@ def get_settings() -> Settings:
         indexes_dir=indexes_dir,
         local_embedding_model_dir=_optional_path_from_env(
             "LOCAL_EMBEDDING_MODEL_DIR",
-            default=Path(r"E:\Models\bge-base-zh-v1.5"),
+            default=None,
             base_dir=project_root,
         ),
         retrieval_index_dir=retrieval_index_dir,
         local_reranker_model_dir=_optional_path_from_env(
             "LOCAL_RERANKER_MODEL_DIR",
-            default=Path(r"E:\Models\bge-reranker-v2-m3"),
+            default=None,
             base_dir=project_root,
         ),
         fusion_mode=os.getenv("FUSION_MODE", "rrf"),

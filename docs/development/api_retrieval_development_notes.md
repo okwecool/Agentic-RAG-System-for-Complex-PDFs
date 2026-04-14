@@ -1,5 +1,12 @@
 # API 与召回开发说明
 
+## 相关文档
+
+- 开发计划：[`development_plan.md`](development_plan.md)
+- Chunk 异常巡检报告：[`../analysis/chunk_anomaly_report.md`](../analysis/chunk_anomaly_report.md)
+- 项目整体待优化文档：[`../analysis/project_optimization_backlog.md`](../analysis/project_optimization_backlog.md)
+- 当前最小化 RAG 实现缺口分析：[`../analysis/current_rag_gap_analysis.md`](../analysis/current_rag_gap_analysis.md)
+
 ## 1. 当前 API 调用方式、示例与调用链路
 
 ### 1.1 环境变量
@@ -12,7 +19,7 @@ DASHSCOPE_BASE_URL=your_openai_compatible_base_url
 DASHSCOPE_MODEL=qwen-plus
 ```
 
-这些配置由 [`src/config/settings.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/config/settings.py) 自动加载。
+这些配置由 `src/config/settings.py` 自动加载。
 
 ### 1.2 HTTP API
 
@@ -89,20 +96,20 @@ chcp 65001
 
 当前 HTTP 调用链路如下：
 
-1. [`src/api/routes/qa.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/api/routes/qa.py) 接收请求。
-2. [`src/generation/qa_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/qa_service.py) 负责编排召回与生成。
-3. [`src/retrieval/search_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/search_service.py) 执行：
+1. `src/api/routes/qa.py` 接收请求。
+2. `src/generation/qa_service.py` 负责编排召回与生成。
+3. `src/retrieval/search_service.py` 执行：
    - BM25 召回
    - 向量召回
    - hybrid fusion
    - filter
    - dedup
    - collapse
-4. [`src/retrieval/context_packer.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/context_packer.py) 选择证据上下文。
-5. [`src/generation/answer_generator.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/answer_generator.py) 构造 prompt 并调用模型。
-6. [`src/generation/factory.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/factory.py) 创建 LLM provider。
-7. [`src/generation/providers/openai_compatible.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/providers/openai_compatible.py) 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope。
-8. [`src/generation/citation_auditor.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/generation/citation_auditor.py) 做基础引用校验。
+4. `src/retrieval/context_packer.py` 选择证据上下文。
+5. `src/generation/answer_generator.py` 构造 prompt 并调用模型。
+6. `src/generation/factory.py` 创建 LLM provider。
+7. `src/generation/providers/openai_compatible.py` 通过 `openai` 包以 OpenAI 兼容方式调用 DashScope。
+8. `src/generation/citation_auditor.py` 做基础引用校验。
 
 ### 1.5 当前检索加载路径
 
@@ -111,9 +118,7 @@ chcp 65001
 1. 优先读取持久化索引 `indexes/retrieval_cache/bge_base_zh_v1_5`
 2. 如果没有索引，则回退到 `artifacts/chunks`
 
-当前本地 embedding 模型：
-
-- `E:\Models\bge-base-zh-v1.5`
+当前 embedding 模型可通过 `LOCAL_EMBEDDING_MODEL_DIR` 配置。
 
 ### 1.6 当前模块关系图
 
@@ -141,7 +146,7 @@ flowchart LR
 
 2. Indexing 层
 - 负责构建 BM25、embedding、向量索引以及持久化索引
-- 当前 embedding 使用本地 `bge-base-zh-v1.5`
+- 当前 embedding 支持通过环境变量指向本地模型
 
 3. Retrieval 层
 - 负责召回、融合、过滤、去重与局部聚合
@@ -198,7 +203,7 @@ flowchart LR
 
 5. 检索层重构
 - 将排序相关逻辑从 `SearchService` 中拆出
-- 新增 [`src/retrieval/signals.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/signals.py) 作为通用信号层
+- 新增 `src/retrieval/signals.py` 作为通用信号层
 
 6. 通用排序信号
 - query phrase overlap
@@ -228,7 +233,7 @@ flowchart LR
 目前可以明确下来的阶段性结论有三点：
 
 1. 检索问题并不只是 embedding 问题
-- 即便换成了更好的本地 embedding，证据质量差时仍会召回到不适合作答的 chunk
+- 即便换成了更强的 embedding，证据质量差时仍会召回到不适合作答的 chunk
 - 因此问题核心仍然是 chunk 质量、版面理解和证据表示方式
 
 2. `SearchService` 适合做通用排序修正，不适合承载领域知识
@@ -278,9 +283,9 @@ flowchart LR
 
 当前边界已经比之前更清楚：
 
-- [`src/retrieval/search_service.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/search_service.py)
+- `src/retrieval/search_service.py`
   - 只负责检索编排
-- [`src/retrieval/signals.py`](E:/Project/Agentic_Project/Agentic-RAG-System-for-Complex-PDFs/src/retrieval/signals.py)
+- `src/retrieval/signals.py`
   - 只负责通用检索信号
 - 更强的领域语义
   - 后续应上移到 profile 层
