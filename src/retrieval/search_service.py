@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
+from collections import defaultdict
 import json
 from pathlib import Path
-from collections import defaultdict
 
 import numpy as np
 
@@ -15,6 +14,7 @@ from src.indexing.index_builder import IndexBuilder
 from src.indexing.vector_index import VectorIndex
 from src.retrieval.hybrid_fusion import HybridFusion
 from src.retrieval.rerank import NoOpReranker
+from src.retrieval.signals import QuerySignature, SearchSignals
 
 
 class SearchService:
@@ -49,7 +49,12 @@ class SearchService:
         filtered = self._filter_results(fused, chunk_types=chunk_types)
         reranked = self.reranker.rerank(query, filtered)
         deduplicated = self._deduplicate_results(reranked, chunk_types=chunk_types)
-        collapsed = self._collapse_results(deduplicated, chunk_types=chunk_types)
+        query_signature = SearchSignals.build_query_signature(query)
+        collapsed = self._collapse_results(
+            deduplicated,
+            query_signature=query_signature,
+            chunk_types=chunk_types,
+        )
         return collapsed[:top_k]
 
     def search_tables(self, query: str, top_k: int = 10) -> list[dict]:
@@ -136,6 +141,7 @@ class SearchService:
     def _collapse_results(
         cls,
         results: list[dict],
+        query_signature: QuerySignature | None = None,
         chunk_types: set[str] | None = None,
     ) -> list[dict]:
         grouped: dict[tuple[str, int, tuple[str, ...]], list[dict]] = defaultdict(list)
@@ -146,10 +152,22 @@ class SearchService:
 
         collapsed: list[dict] = []
         for items in grouped.values():
-            representative = max(items, key=cls._group_sort_key)
+            representative = max(
+                items,
+                key=lambda current: cls._group_sort_key(
+                    current,
+                    query_signature=query_signature,
+                ),
+            )
             collapsed.append(representative)
 
-        collapsed.sort(key=cls._group_sort_key, reverse=True)
+        collapsed.sort(
+            key=lambda current: cls._group_sort_key(
+                current,
+                query_signature=query_signature,
+            ),
+            reverse=True,
+        )
         return collapsed
 
     @classmethod
@@ -188,40 +206,18 @@ class SearchService:
 
     @staticmethod
     def _text_signature(text: str) -> str:
-        normalized = SearchService._normalize_text(text)
-        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+        return SearchSignals.text_signature(text)
 
     @staticmethod
     def _normalize_text(text: str) -> str:
-        return " ".join(text.lower().split())
+        return SearchSignals.normalize_text(text)
 
     @staticmethod
-    def _group_sort_key(item: dict) -> tuple[int, float, int]:
-        chunk = item["chunk"]
-        type_priority = {
-            "paragraph": 3,
-            "mixed": 3,
-            "table": 2,
-            "figure_caption": 2,
-            "heading": 1,
-        }.get(chunk.chunk_type, 0)
-        text_length = len(chunk.text.strip())
-        score = float(item.get("score", 0.0)) - SearchService._toc_penalty(chunk)
-        return (type_priority, score, text_length)
-
-    @staticmethod
-    def _toc_penalty(chunk) -> float:
-        title = SearchService._normalize_text(" ".join(chunk.section_path))
-        text = SearchService._normalize_text(chunk.text[:120])
-        haystack = f"{title} {text}"
-        toc_markers = (
-            "目录",
-            "图表目录",
-            "contents",
-            "table of contents",
-            "figure index",
-            "chart index",
+    def _group_sort_key(
+        item: dict,
+        query_signature: QuerySignature | None = None,
+    ) -> tuple[int, float, int]:
+        return SearchSignals.representative_rank_key(
+            item,
+            query_signature=query_signature,
         )
-        if any(marker in haystack for marker in toc_markers):
-            return 0.02
-        return 0.0
