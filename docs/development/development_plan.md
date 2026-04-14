@@ -1,5 +1,12 @@
 # Agentic RAG for Complex PDFs 开发计划
 
+## 相关文档
+
+- API 与召回开发说明：[`api_retrieval_development_notes.md`](api_retrieval_development_notes.md)
+- Chunk 异常巡检报告：[`../analysis/chunk_anomaly_report.md`](../analysis/chunk_anomaly_report.md)
+- 项目整体待优化文档：[`../analysis/project_optimization_backlog.md`](../analysis/project_optimization_backlog.md)
+- 当前最小化 RAG 实现缺口分析：[`../analysis/current_rag_gap_analysis.md`](../analysis/current_rag_gap_analysis.md)
+
 ## 1. 文档目标
 
 本文档用于将设计方案落地为可执行的开发计划，明确：

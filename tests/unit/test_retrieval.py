@@ -10,6 +10,7 @@ from src.indexing.vector_index import VectorIndex
 from src.retrieval.hybrid_fusion import HybridFusion
 from src.retrieval.rerank import NoOpReranker
 from src.retrieval.search_service import SearchService
+from src.retrieval.signals import SearchSignals
 from src.config.settings import get_settings
 
 
@@ -189,11 +190,84 @@ class RetrievalFrameworkTest(unittest.TestCase):
                 {"chunk": toc_chunk, "score": 0.031, "sources": ["bm25"]},
                 {"chunk": body_chunk, "score": 0.025, "sources": ["vector"]},
             ],
-            key=service._group_sort_key,
+            key=lambda item: service._group_sort_key(
+                item,
+                query_signature=SearchSignals.build_query_signature("OpenAI Sora 2"),
+            ),
             reverse=True,
         )
 
         self.assertEqual(ranked[0]["chunk"].chunk_id, "c10")
+
+    def test_search_service_downweights_sparse_chunks_for_narrative_query(self) -> None:
+        service = self._build_service()
+        chart_chunk = Chunk(
+            chunk_id="c11",
+            doc_id="doc3",
+            text="2021 2022 2023 2024 2025H1\n图：比亚迪分区域销量/万辆\n图：比亚迪分区域市占率/%",
+            page_no=10,
+            chunk_type="paragraph",
+            section_path=["图表"],
+            metadata={"page_no": 10},
+        )
+        revenue_chunk = Chunk(
+            chunk_id="c12",
+            doc_id="doc3",
+            text="2025H1 营业收入（亿元）同比增长，主营业务收入继续提升。",
+            page_no=11,
+            chunk_type="paragraph",
+            section_path=["比亚迪财务表现"],
+            metadata={"page_no": 11},
+        )
+
+        ranked = sorted(
+            [
+                {"chunk": chart_chunk, "score": 0.030, "sources": ["bm25", "vector"]},
+                {"chunk": revenue_chunk, "score": 0.026, "sources": ["vector"]},
+            ],
+            key=lambda item: service._group_sort_key(
+                item,
+                query_signature=SearchSignals.build_query_signature("比亚迪2025年营业收入如何"),
+            ),
+            reverse=True,
+        )
+
+        self.assertEqual(ranked[0]["chunk"].chunk_id, "c12")
+
+    def test_search_service_keeps_chart_like_chunks_for_chart_query(self) -> None:
+        service = self._build_service()
+        chart_chunk = Chunk(
+            chunk_id="c13",
+            doc_id="doc3",
+            text="2021 2022 2023 2024 2025H1\n图：比亚迪分区域销量/万辆\n图：比亚迪分区域市占率/%",
+            page_no=10,
+            chunk_type="paragraph",
+            section_path=["图表"],
+            metadata={"page_no": 10},
+        )
+        plain_chunk = Chunk(
+            chunk_id="c14",
+            doc_id="doc3",
+            text="比亚迪正在持续推进渠道建设和海外布局。",
+            page_no=11,
+            chunk_type="paragraph",
+            section_path=["正文"],
+            metadata={"page_no": 11},
+        )
+
+        ranked = sorted(
+            [
+                {"chunk": chart_chunk, "score": 0.022, "sources": ["vector"]},
+                {"chunk": plain_chunk, "score": 0.022, "sources": ["vector"]},
+            ],
+            key=lambda item: service._group_sort_key(
+                item,
+                query_signature=SearchSignals.build_query_signature("比亚迪销量走势图"),
+            ),
+            reverse=True,
+        )
+
+        self.assertEqual(ranked[0]["chunk"].chunk_id, "c13")
 
     def test_index_builder_loads_chunk_artifacts(self) -> None:
         settings = get_settings()

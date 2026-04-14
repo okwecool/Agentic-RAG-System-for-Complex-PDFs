@@ -1,5 +1,12 @@
 # 项目整体待优化文档
 
+## 相关文档
+
+- 开发计划：[`../development/development_plan.md`](../development/development_plan.md)
+- API 与召回开发说明：[`../development/api_retrieval_development_notes.md`](../development/api_retrieval_development_notes.md)
+- Chunk 异常巡检报告：[`chunk_anomaly_report.md`](chunk_anomaly_report.md)
+- 当前最小化 RAG 实现缺口分析：[`current_rag_gap_analysis.md`](current_rag_gap_analysis.md)
+
 ## 1. 文档目的
 
 本文档用于沉淀当前项目在实现层面已经暴露出的系统性优化点，帮助后续开发时区分：
