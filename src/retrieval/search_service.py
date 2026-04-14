@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,8 @@ from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.hybrid_fusion import HybridFusion
 from src.retrieval.rerank import NoOpReranker
 from src.retrieval.signals import QuerySignature, SearchSignals
+
+logger = logging.getLogger(__name__)
 
 
 class SearchService:
@@ -44,9 +47,23 @@ class SearchService:
         top_k: int = 10,
         chunk_types: set[str] | None = None,
     ) -> list[dict]:
+        logger.info(
+            "search.start query=%r top_k=%s chunk_types=%s embedding=%s fusion=%s reranker=%s",
+            query,
+            top_k,
+            sorted(chunk_types) if chunk_types else "all",
+            self.embedding_backend,
+            self.fusion.describe(),
+            self.describe_reranker(),
+        )
         query_vector = self.embedding_service.embed_query(query)
         bm25_results = self.bm25_index.search(query, top_k=max(top_k * 2, top_k))
         vector_results = self.vector_index.search(query_vector, top_k=max(top_k * 2, top_k))
+        logger.info(
+            "search.stage_recall bm25_hits=%s vector_hits=%s",
+            len(bm25_results),
+            len(vector_results),
+        )
         fused = self.fusion.fuse(bm25_results, vector_results, top_k=max(top_k * 3, top_k))
         filtered = self._filter_results(fused, chunk_types=chunk_types)
         reranked = self.reranker.rerank(query, filtered)
@@ -56,6 +73,14 @@ class SearchService:
             deduplicated,
             query_signature=query_signature,
             chunk_types=chunk_types,
+        )
+        logger.info(
+            "search.stage_rank fused=%s filtered=%s reranked=%s deduplicated=%s collapsed=%s",
+            len(fused),
+            len(filtered),
+            len(reranked),
+            len(deduplicated),
+            len(collapsed),
         )
         return collapsed[:top_k]
 
@@ -227,3 +252,12 @@ class SearchService:
             item,
             query_signature=query_signature,
         )
+
+    def describe_reranker(self) -> dict[str, str | int]:
+        describe = getattr(self.reranker, "describe", None)
+        if callable(describe):
+            return describe()
+        return {
+            "backend": getattr(self.reranker, "backend", "unknown"),
+            "model_name": getattr(self.reranker, "model_name", "unknown"),
+        }

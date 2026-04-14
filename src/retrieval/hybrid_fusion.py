@@ -16,6 +16,14 @@ class HybridFusion:
         self.bm25_weight = bm25_weight
         self.vector_weight = vector_weight
 
+    def describe(self) -> dict[str, float | int | str]:
+        return {
+            "mode": self.mode,
+            "rrf_k": self.rrf_k,
+            "bm25_weight": self.bm25_weight,
+            "vector_weight": self.vector_weight,
+        }
+
     def fuse(self, bm25_results: list[dict], vector_results: list[dict], top_k: int) -> list[dict]:
         aggregated: dict[str, dict] = {}
         self._accumulate(aggregated, bm25_results, source_weight=self.bm25_weight)
