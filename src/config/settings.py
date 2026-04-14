@@ -27,6 +27,7 @@ class Settings:
     reranker_top_n: int = 20
     reranker_batch_size: int = 8
     llm_provider: str = "openai_compatible"
+    llm_prompt_family: str = "auto"
     llm_model_name: str = "qwen-plus"
     dashscope_api_key: str | None = None
     dashscope_base_url: str | None = None
@@ -98,6 +99,7 @@ def get_settings() -> Settings:
         reranker_top_n=int(os.getenv("RERANKER_TOP_N", "20")),
         reranker_batch_size=int(os.getenv("RERANKER_BATCH_SIZE", "8")),
         llm_provider=os.getenv("LLM_PROVIDER", "openai_compatible"),
+        llm_prompt_family=os.getenv("LLM_PROMPT_FAMILY", "auto"),
         llm_model_name=os.getenv("DASHSCOPE_MODEL", "qwen-plus"),
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
         dashscope_base_url=os.getenv("DASHSCOPE_BASE_URL"),

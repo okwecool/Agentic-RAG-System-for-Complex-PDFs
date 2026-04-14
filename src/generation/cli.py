@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 from src.config.settings import get_settings
 from src.generation.qa_service import QaService
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
 
 def format_answer(result: dict) -> str:
@@ -49,6 +57,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     except AttributeError:
         pass
+    configure_logging()
     parser = argparse.ArgumentParser(description="Ask questions over indexed PDF evidence.")
     parser.add_argument("--query", required=True)
     parser.add_argument("--top-k", type=int, default=None)

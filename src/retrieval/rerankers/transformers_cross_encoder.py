@@ -28,6 +28,15 @@ class TransformersCrossEncoderReranker(BaseRerankerProvider):
         self._tokenizer = None
         self._model = None
 
+    def describe(self) -> dict[str, str | int]:
+        return {
+            "backend": self.backend,
+            "model_name": self.model_name,
+            "top_n": self.top_n,
+            "batch_size": self.batch_size,
+            "device": self.device,
+        }
+
     def rerank(self, query: str, candidates: list[dict]) -> list[dict]:
         if len(candidates) <= 1:
             return candidates

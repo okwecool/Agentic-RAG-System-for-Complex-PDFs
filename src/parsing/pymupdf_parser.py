@@ -96,7 +96,13 @@ class PyMuPdfParser:
                     text=text,
                     bbox=tuple(float(value) for value in bbox) if bbox else None,
                     page_no=page_no,
-                    source_span={"page_no": page_no, "block_index": block_index},
+                    source_span={
+                        "page_no": page_no,
+                        "block_index": block_index,
+                        "line_count": line_count,
+                        "max_size": max_size,
+                        "bold_ratio": round(bold_spans / max(1, span_count), 4),
+                    },
                 )
             )
         return blocks
@@ -109,19 +115,67 @@ class PyMuPdfParser:
         bold_ratio: float,
     ) -> str:
         stripped = text.strip()
-        if re.match(
-            r"^(\d{1,2}(?:\.\d+){0,3}|[IVXLC]+[.)]?|[一二三四五六七八九十]+、)\s+.+",
-            stripped,
-        ) and line_count <= 3:
+        if PyMuPdfParser._looks_like_structured_heading(stripped) and line_count <= 3:
             return "heading"
-        if stripped.startswith(("-", "*", "•")):
+        if stripped.startswith(("-", "*", "•", "◼", "◆", "➢")):
             return "list_item"
         if (
             line_count <= 2
-            and len(stripped) <= 40
-            and not stripped.endswith(("。", "；", ";", "，", ",", "：", ":"))
+            and 4 <= len(stripped) <= 36
+            and not stripped.endswith(("。", "！", "？", "；", "：", ".", "!", "?", ";", ":"))
             and max_size >= 14
-            and (bold_ratio >= 0.85 or len(stripped) <= 20)
+            and bold_ratio >= 0.6
+            and not PyMuPdfParser._looks_like_date_or_period_label(stripped)
+            and not PyMuPdfParser._looks_like_page_or_source_note(stripped)
+            and not PyMuPdfParser._looks_mostly_numeric(stripped)
         ):
             return "heading"
         return "paragraph"
+
+    @staticmethod
+    def _looks_like_structured_heading(text: str) -> bool:
+        return bool(
+            re.match(
+                r"^("
+                r"\d{1,2}(?:\.\d+){0,3}"
+                r"|[IVXLC]+[.)]?"
+                r"|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+[、.)．]?"
+                r")\s*.+",
+                text,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_date_or_period_label(text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text.lower())
+        return bool(
+            re.fullmatch(
+                r"(20\d{2}(?:[-/年]\d{1,2}(?:[-/月]\d{1,2}日?)?)?|"
+                r"\d{4}[qehm]\d{1,2}|"
+                r"\d{4}[年]?\d{0,2}[月]?\d{0,2}[日]?)",
+                normalized,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_page_or_source_note(text: str) -> bool:
+        compact = re.sub(r"\s+", " ", text.strip()).lower()
+        if (
+            "\u6570\u636e\u6765\u6e90" in compact
+            or "\u8d44\u6599\u6765\u6e90" in compact
+            or "source:" in compact
+        ):
+            return True
+        return bool(re.fullmatch(r"\d{1,4}", compact))
+
+    @staticmethod
+    def _looks_mostly_numeric(text: str) -> bool:
+        meaningful = [char for char in text if not char.isspace()]
+        if not meaningful:
+            return False
+        numeric_like = sum(
+            1
+            for char in meaningful
+            if char.isdigit() or char in {"%", ".", "-", "/", "+", "E"}
+        )
+        return numeric_like / len(meaningful) >= 0.45

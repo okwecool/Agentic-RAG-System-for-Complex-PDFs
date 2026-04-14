@@ -14,3 +14,9 @@ class NoOpReranker(BaseRerankerProvider):
     def rerank(self, query: str, candidates: list[dict]) -> list[dict]:
         del query
         return candidates
+
+    def describe(self) -> dict[str, str | int]:
+        return {
+            "backend": self.backend,
+            "model_name": self.model_name,
+        }

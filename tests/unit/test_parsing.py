@@ -198,6 +198,120 @@ class ParsingHelpersTest(unittest.TestCase):
         self.assertEqual(len(cleaned.pages[0].blocks), 1)
         self.assertIn("legal statement requirements", cleaned.pages[0].blocks[0].text)
 
+    def test_cleaner_removes_generic_source_note_blocks(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    width=600,
+                    height=800,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="heading",
+                            text="46\n数据来源：公司公告、研究所",
+                            bbox=(60, 80, 260, 120),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b2",
+                            type="paragraph",
+                            text="Main body paragraph",
+                            bbox=(80, 200, 500, 260),
+                            page_no=1,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertEqual(len(cleaned.pages[0].blocks), 1)
+        self.assertEqual(cleaned.pages[0].blocks[0].text, "Main body paragraph")
+
+    def test_cleaner_demotes_short_headings_on_label_dense_pages(self) -> None:
+        blocks = [
+            Block(
+                block_id=f"b{i}",
+                type="heading",
+                text=text,
+                bbox=(80, 60 + i * 20, 260, 76 + i * 20),
+                page_no=1,
+            )
+            for i, text in enumerate(
+                [
+                    "封闭模式",
+                    "开放模式",
+                    "IBM 联盟",
+                    "标准化",
+                    "价格敏感",
+                    "体验敏感",
+                ],
+                start=1,
+            )
+        ]
+        blocks.extend(
+            [
+                Block(
+                    block_id="b100",
+                    type="paragraph",
+                    text="这是一段相对完整的正文说明，用来保证页面上仍然存在叙述性内容。",
+                    bbox=(300, 120, 560, 200),
+                    page_no=1,
+                ),
+                Block(
+                    block_id="b101",
+                    type="paragraph",
+                    text="另一段说明文字，用于模拟图表页上的正文解释。",
+                    bbox=(300, 220, 560, 280),
+                    page_no=1,
+                ),
+            ]
+        )
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[Page(page_no=1, width=600, height=800, blocks=blocks)],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        heading_count = sum(1 for block in cleaned.pages[0].blocks if block.type == "heading")
+        paragraph_count = sum(1 for block in cleaned.pages[0].blocks if block.type == "paragraph")
+        self.assertLessEqual(heading_count, 1)
+        self.assertGreaterEqual(paragraph_count, 3)
+
+    def test_section_builder_ignores_date_and_source_headings(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(block_id="b1", type="heading", text="2025 年 12 月 13 日"),
+                        Block(block_id="b2", type="paragraph", text="封面正文"),
+                        Block(block_id="b3", type="heading", text="98 数据来源：公司公告、研究所"),
+                        Block(block_id="b4", type="paragraph", text="后续正文"),
+                        Block(block_id="b5", type="heading", text="1 正文开始"),
+                        Block(block_id="b6", type="paragraph", text="章节正文"),
+                    ],
+                )
+            ],
+        )
+
+        enriched = SectionBuilder().apply(document)
+
+        self.assertEqual(enriched.pages[0].blocks[1].section_path, ["Document"])
+        self.assertEqual(enriched.pages[0].blocks[3].section_path, ["Document"])
+        self.assertEqual(enriched.pages[0].blocks[5].section_path, ["1 正文开始"])
+
 
 if __name__ == "__main__":
     unittest.main()
