@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import urllib.error
 import urllib.request
 
@@ -22,6 +23,10 @@ def _request_json(url: str, payload: dict | None = None) -> tuple[int, dict]:
 
 
 def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
     parser = argparse.ArgumentParser(description="Run a smoke test against the QA API.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--query", default="Sora 2 有什么升级？")
