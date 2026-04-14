@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import pickle
 from collections import defaultdict
 
 import numpy as np
@@ -90,12 +89,7 @@ class SearchService:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         resolved_model_path = embedding_model_path or manifest.get("embedding_model_path")
         embedding_service = EmbeddingService(model_name_or_path=resolved_model_path)
-        if manifest.get("embedding_backend") == "tfidf":
-            vectorizer_path = index_dir / "vectorizer.pkl"
-            if vectorizer_path.exists():
-                with vectorizer_path.open("rb") as handle:
-                    embedding_service._vectorizer = pickle.load(handle)
-                embedding_service._fitted = True
+        embedding_service.load_state(index_dir)
         vector_index = VectorIndex()
         bm25_index = Bm25Index()
 
