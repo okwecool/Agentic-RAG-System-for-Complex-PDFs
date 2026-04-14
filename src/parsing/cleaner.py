@@ -11,17 +11,23 @@ DISCLAIMER_FOOTER_PATTERNS = (
     re.compile(r"\bdisclaimer\b", re.IGNORECASE),
     re.compile(r"\blegal statement\b", re.IGNORECASE),
     re.compile(r"\bimportant notice\b", re.IGNORECASE),
-    re.compile(r"信息披露"),
-    re.compile(r"法律声明"),
-    re.compile(r"免责声明"),
-    re.compile(r"重要声明"),
+    re.compile(r"\u4fe1\u606f\u62ab\u9732"),
+    re.compile(r"\u6cd5\u5f8b\u58f0\u660e"),
+    re.compile(r"\u514d\u8d23\u8bf4\u660e"),
+    re.compile(r"\u91cd\u8981\u58f0\u660e"),
+)
+
+SOURCE_NOTE_PATTERNS = (
+    re.compile(r"^(?:\d{1,4}\s+)?\u6570\u636e\u6765\u6e90[:\uff1a]?", re.IGNORECASE),
+    re.compile(r"^(?:\d{1,4}\s+)?\u8d44\u6599\u6765\u6e90[:\uff1a]?", re.IGNORECASE),
+    re.compile(r"^(?:\d{1,4}\s+)?source[:：]?", re.IGNORECASE),
 )
 
 STRUCTURED_HEADING_PATTERN = re.compile(
     r"^("
     r"\d{1,2}(?:\.\d+){0,3}"
     r"|[IVXLC]+[.)]?"
-    r"|[一二三四五六七八九十]+[、.]?"
+    r"|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+[、.)．]?"
     r")\s*.+"
 )
 
@@ -46,7 +52,7 @@ class DocumentCleaner:
                 ):
                     continue
                 cleaned_blocks.append(block)
-            page.blocks = self._merge_wrapped_blocks(cleaned_blocks)
+            page.blocks = self._normalize_page_blocks(page, cleaned_blocks)
         return document
 
     @staticmethod
@@ -69,6 +75,8 @@ class DocumentCleaner:
         if re.fullmatch(r"\d+", compact):
             return True
         if re.fullmatch(r"page\s+\d+(\s+of\s+\d+)?", compact.lower()):
+            return True
+        if self._looks_like_source_note(compact):
             return True
         if compact in repeated_noise:
             return True
@@ -118,6 +126,28 @@ class DocumentCleaner:
         if bottom_ratio >= 0.88:
             return "footer"
         return None
+
+    def _normalize_page_blocks(self, page: Page, blocks: list[Block]) -> list[Block]:
+        merged_blocks = self._merge_wrapped_blocks(blocks)
+        label_dense = self._is_label_dense_page(merged_blocks)
+        normalized: list[Block] = []
+        for block in merged_blocks:
+            source_span = dict(block.source_span or {})
+            source_span["page_profile"] = "label_dense" if label_dense else "default"
+            normalized.append(
+                Block(
+                    block_id=block.block_id,
+                    type=self._normalize_block_type(block, label_dense),
+                    text=block.text,
+                    bbox=block.bbox,
+                    section_path=block.section_path.copy(),
+                    page_no=block.page_no,
+                    table_html=block.table_html,
+                    table_json=block.table_json,
+                    source_span=source_span,
+                )
+            )
+        return normalized
 
     def _is_visual_noise(self, block: Block, page: Page) -> bool:
         if not block.bbox:
@@ -257,6 +287,20 @@ class DocumentCleaner:
             source_span={"merged_block_ids": [current.block_id, nxt.block_id]},
         )
 
+    def _normalize_block_type(self, block: Block, label_dense: bool) -> str:
+        if block.type != "heading":
+            return block.type
+        if self._looks_like_structured_heading(block.text):
+            return "heading"
+        normalized_text = re.sub(r"\s+", " ", block.text.strip())
+        if self._looks_like_source_note(normalized_text):
+            return "paragraph"
+        if label_dense and len(normalized_text) <= 40:
+            return "paragraph"
+        if len(normalized_text) <= 4:
+            return "paragraph"
+        return block.type
+
     def _demote_suspicious_heading(self, block: Block) -> Block:
         if block.type != "heading":
             return block
@@ -283,3 +327,20 @@ class DocumentCleaner:
     @staticmethod
     def _ends_with_terminal_punctuation(text: str) -> bool:
         return text.strip().endswith(("。", "！", "？", "；", "：", ".", "!", "?", ";", ":"))
+
+    @staticmethod
+    def _looks_like_source_note(text: str) -> bool:
+        compact = re.sub(r"\s+", " ", text.strip())
+        return any(pattern.search(compact) for pattern in SOURCE_NOTE_PATTERNS)
+
+    def _is_label_dense_page(self, blocks: list[Block]) -> bool:
+        if len(blocks) < 8:
+            return False
+        heading_count = sum(1 for block in blocks if block.type == "heading")
+        short_count = sum(1 for block in blocks if len(block.text.strip()) <= 24)
+        narrative_count = sum(1 for block in blocks if len(block.text.strip()) >= 50)
+        return (
+            heading_count >= 5
+            and short_count >= 5
+            and narrative_count <= max(4, len(blocks) // 3)
+        )
