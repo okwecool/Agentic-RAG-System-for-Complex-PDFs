@@ -14,6 +14,8 @@ class Block:
     page_no: int | None = None
     table_html: str | None = None
     table_json: dict[str, Any] | None = None
+    content_role: str | None = None
+    role_confidence: float | None = None
     source_span: dict[str, Any] | None = None
 
 
@@ -23,6 +25,8 @@ class Page:
     blocks: list[Block] = field(default_factory=list)
     width: float | None = None
     height: float | None = None
+    page_profile: str | None = None
+    page_signals: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -34,6 +38,7 @@ class Chunk:
     chunk_type: str = "paragraph"
     section_path: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_type: str | None = None
 
 
 @dataclass(slots=True)
@@ -43,6 +48,7 @@ class Document:
     source_file: str
     doc_type: str = "other"
     domain_profile: str = "generic"
+    document_source_type: str = "unknown"
     pages: list[Page] = field(default_factory=list)
     chunks: list[Chunk] = field(default_factory=list)
     metadata: dict[str, Any] = field(
