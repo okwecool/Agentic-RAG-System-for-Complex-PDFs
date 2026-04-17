@@ -7,9 +7,11 @@ except ModuleNotFoundError:  # pragma: no cover - environment-specific dependenc
 
 try:
     from src.api.app import create_app
+    from src.api.routes.agentic_qa import get_agentic_qa_service
     from src.api.routes.qa import get_qa_service
 except ModuleNotFoundError:  # pragma: no cover - environment-specific dependency
     create_app = None
+    get_agentic_qa_service = None
     get_qa_service = None
 
 
@@ -64,5 +66,23 @@ class ApiQaTests(unittest.TestCase):
         self.assertEqual("测试答案", payload["answer"])
         self.assertEqual("stub-model", payload["model"])
         self.assertEqual("qwen", payload["prompt_family"])
+        self.assertEqual(1, len(payload["citations"]))
+        app.dependency_overrides.clear()
+
+    @unittest.skipIf(
+        TestClient is None or create_app is None,
+        "fastapi test client is not installed",
+    )
+    def test_agentic_qa_route_returns_answer_payload(self) -> None:
+        app = create_app()
+        app.dependency_overrides[get_agentic_qa_service] = lambda: StubQaService()
+        client = TestClient(app)
+
+        response = client.post("/api/qa/ask-agentic", json={"query": "测试问题"})
+
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual("测试答案", payload["answer"])
+        self.assertEqual("stub-model", payload["model"])
         self.assertEqual(1, len(payload["citations"]))
         app.dependency_overrides.clear()

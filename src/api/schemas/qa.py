@@ -38,5 +38,8 @@ class QaResponse(BaseModel):
     prompt_family: str | None = None
     embedding_backend: str
     retrieved_count: int
+    workflow_status: str | None = None
+    route_type: str | None = None
+    route_trace: list[dict] | None = None
     citations: list[CitationResponse]
     evidence: list[EvidenceResponse]
