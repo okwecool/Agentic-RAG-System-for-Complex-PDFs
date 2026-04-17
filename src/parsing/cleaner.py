@@ -40,7 +40,7 @@ class DocumentCleaner:
         for page in document.pages:
             cleaned_blocks: list[Block] = []
             for block in page.blocks:
-                cleaned_text = self._normalize_text(block.text)
+                cleaned_text = self._normalize_text(block.text, block.type)
                 if not cleaned_text:
                     continue
                 block.text = cleaned_text
@@ -56,11 +56,42 @@ class DocumentCleaner:
         return document
 
     @staticmethod
-    def _normalize_text(text: str) -> str:
+    def _normalize_text(text: str, block_type: str = "paragraph") -> str:
         text = text.replace("\u00a0", " ")
+        text = text.replace("\uf06e", "• ")
+        text = text.replace("\uf0a7", "• ")
         text = re.sub(r"[ \t]+", " ", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
+        text = DocumentCleaner._normalize_inline_layout(text, block_type)
         return text.strip()
+
+    @staticmethod
+    def _normalize_inline_layout(text: str, block_type: str) -> str:
+        if "\n" not in text or block_type == "table":
+            return text
+
+        raw_lines = [line.strip() for line in text.splitlines()]
+        lines = [line for line in raw_lines if line]
+        if len(lines) <= 1:
+            return lines[0] if lines else ""
+
+        if block_type == "heading":
+            return " ".join(lines)
+        if block_type == "list_item":
+            head = lines[0]
+            if head.startswith(("•", "-", "*", "◼", "◆", "➢")):
+                return f"{head} {' '.join(lines[1:])}".strip()
+            return " ".join(lines)
+
+        short_line_ratio = sum(1 for line in lines if len(line) <= 10) / len(lines)
+        if short_line_ratio >= 0.7 and len(lines) >= 4:
+            return "\n".join(lines)
+
+        joined = " ".join(lines)
+        joined = re.sub(r"\s+([，。！？；：,.!?;:])", r"\1", joined)
+        joined = re.sub(r"([（【“‘])\s+", r"\1", joined)
+        joined = re.sub(r"\s+([）】”’])", r"\1", joined)
+        return joined
 
     def _is_noise(
         self,
@@ -225,6 +256,8 @@ class DocumentCleaner:
         compact = text.replace("\n", " ").strip()
         if re.search(r"\b\d+\s*/\s*\d+\b", compact):
             return True
+        if "请仔细阅读在本报告尾部的重要法律声明" in compact:
+            return True
         return any(pattern.search(compact) for pattern in DISCLAIMER_FOOTER_PATTERNS)
 
     def _merge_wrapped_blocks(self, blocks: list[Block]) -> list[Block]:
@@ -277,15 +310,42 @@ class DocumentCleaner:
             max(current.bbox[2], nxt.bbox[2]),
             max(current.bbox[3], nxt.bbox[3]),
         ) if current.bbox and nxt.bbox else current.bbox or nxt.bbox
+        merged_text = self._merge_wrapped_text(current.text, nxt.text)
         return Block(
             block_id=f"{current.block_id}+{nxt.block_id}",
             type="paragraph",
-            text=f"{current.text}\n\n{nxt.text}",
+            text=merged_text,
             bbox=merged_bbox,
             section_path=current.section_path.copy(),
             page_no=current.page_no or nxt.page_no,
             source_span={"merged_block_ids": [current.block_id, nxt.block_id]},
         )
+
+    def _merge_wrapped_text(self, current_text: str, next_text: str) -> str:
+        left = current_text.strip()
+        right = next_text.strip()
+        if not left:
+            return right
+        if not right:
+            return left
+
+        separator = self._wrapped_separator(left, right)
+        merged = f"{left}{separator}{right}"
+        return self._normalize_inline_layout(merged, "paragraph")
+
+    @staticmethod
+    def _wrapped_separator(left: str, right: str) -> str:
+        if not left or not right:
+            return ""
+        if re.search(r"[A-Za-z0-9]$", left) and re.match(r"^[A-Za-z0-9]", right):
+            return " "
+        if left.endswith(("•", "-", "*", "◼", "◆", "➢")):
+            return " "
+        if left.endswith(("(", "（", "[", "【", "“", "\"", "'")):
+            return ""
+        if right.startswith((")", "）", "]", "】", "”", "\"", "'", "，", "。", "！", "？", "；", "：", ",", ".", "!", "?", ";", ":")):
+            return ""
+        return ""
 
     def _normalize_block_type(self, block: Block, label_dense: bool) -> str:
         if block.type != "heading":

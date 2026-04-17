@@ -2,6 +2,7 @@ import unittest
 
 from src.domain.models.document import Block, Document, Page
 from src.parsing.cleaner import DocumentCleaner
+from src.parsing.pymupdf_parser import PyMuPdfParser
 from src.parsing.section_builder import SectionBuilder
 
 
@@ -29,7 +30,56 @@ class ParsingHelpersTest(unittest.TestCase):
         cleaned = DocumentCleaner().clean(document)
 
         self.assertEqual(len(cleaned.pages[0].blocks), 1)
-        self.assertEqual(cleaned.pages[0].blocks[0].text, "Hello world\n\nnext line")
+        self.assertEqual(cleaned.pages[0].blocks[0].text, "Hello world next line")
+
+    def test_cleaner_joins_wrapped_paragraph_lines(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="Sora 2 在物理模拟精度上实现了对初代 Sora 的突破性升级。\n针对初代“水流方向不自然”的问题，\nSora 2 升级了流体模拟精度。",
+                            page_no=1,
+                        )
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertNotIn("\n", cleaned.pages[0].blocks[0].text)
+        self.assertIn("针对初代", cleaned.pages[0].blocks[0].text)
+
+    def test_cleaner_normalizes_private_use_bullet(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="\uf06e\nOpenAI Sora 2 相较于初代实现了升级。",
+                            page_no=1,
+                        )
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertTrue(cleaned.pages[0].blocks[0].text.startswith("• OpenAI"))
 
     def test_cleaner_removes_repeated_headers(self) -> None:
         document = Document(
@@ -94,6 +144,40 @@ class ParsingHelpersTest(unittest.TestCase):
         self.assertEqual(len(cleaned.pages[0].blocks), 1)
         self.assertEqual(cleaned.pages[0].blocks[0].type, "paragraph")
         self.assertIn("same paragraph", cleaned.pages[0].blocks[0].text)
+
+    def test_cleaner_merges_wrapped_blocks_without_artificial_paragraph_breaks(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="针对初代“水流方向不自",
+                            bbox=(80, 100, 500, 114),
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b2",
+                            type="paragraph",
+                            text="然”的问题，Sora 2 升级了流体模拟精度。",
+                            bbox=(80, 118, 500, 132),
+                            page_no=1,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        cleaned = DocumentCleaner().clean(document)
+
+        self.assertEqual(len(cleaned.pages[0].blocks), 1)
+        self.assertNotIn("\n", cleaned.pages[0].blocks[0].text)
+        self.assertIn("不自然", cleaned.pages[0].blocks[0].text)
 
     def test_section_builder_tracks_nested_numeric_headings(self) -> None:
         document = Document(
@@ -311,6 +395,17 @@ class ParsingHelpersTest(unittest.TestCase):
         self.assertEqual(enriched.pages[0].blocks[1].section_path, ["Document"])
         self.assertEqual(enriched.pages[0].blocks[3].section_path, ["Document"])
         self.assertEqual(enriched.pages[0].blocks[5].section_path, ["1 正文开始"])
+
+
+    def test_parser_does_not_treat_numeric_label_as_heading(self) -> None:
+        block_type = PyMuPdfParser._infer_block_type(
+            text="70% 。",
+            line_count=1,
+            max_size=15.0,
+            bold_ratio=1.0,
+        )
+
+        self.assertEqual(block_type, "paragraph")
 
 
 if __name__ == "__main__":

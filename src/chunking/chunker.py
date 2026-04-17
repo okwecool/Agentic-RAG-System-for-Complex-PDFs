@@ -1,5 +1,7 @@
 """Section-aware chunker implementation."""
 
+import re
+
 from src.chunking.rules import ChunkingConfig
 from src.domain.models.document import Block, Chunk, Document
 from src.utils.ids import build_chunk_id
@@ -164,7 +166,7 @@ class SectionAwareChunker:
         page_no = blocks[0].page_no or 1
         section_path = blocks[0].section_path.copy()
         chunk_type = "mixed" if len({block.type for block in blocks}) > 1 else blocks[0].type
-        text = "\n\n".join(block.text for block in blocks).strip()
+        text = self._compose_chunk_text(blocks)
         return Chunk(
             chunk_id=build_chunk_id(document.doc_id, page_no, chunk_index),
             doc_id=document.doc_id,
@@ -180,6 +182,51 @@ class SectionAwareChunker:
                 "char_count": len(text),
             },
         )
+
+    def _compose_chunk_text(self, blocks: list[Block]) -> str:
+        if not blocks:
+            return ""
+        parts = [blocks[0].text.strip()]
+        for previous, current in zip(blocks, blocks[1:]):
+            separator = self._block_separator(previous, current)
+            parts.append(separator)
+            parts.append(current.text.strip())
+        return "".join(parts).strip()
+
+    def _block_separator(self, previous: Block, current: Block) -> str:
+        previous_text = previous.text.strip()
+        current_text = current.text.strip()
+        if not previous_text or not current_text:
+            return ""
+        if previous.type == "heading" and current.type != "heading":
+            return "\n\n"
+        if current.type == "list_item":
+            return "\n\n"
+        if self._looks_like_wrapped_continuation(previous_text, current_text):
+            return self._inline_separator(previous_text, current_text)
+        return "\n\n"
+
+    @staticmethod
+    def _looks_like_wrapped_continuation(previous_text: str, current_text: str) -> bool:
+        if not previous_text or not current_text:
+            return False
+        if previous_text.endswith(("。", "！", "？", "；", "：", ".", "!", "?", ";", ":")):
+            return False
+        if previous_text.startswith(("图表", "图：", "表头:", "数据:")):
+            return False
+        if current_text.startswith(("图表", "表头:", "数据:", "•", "◼", "◆", "➢")):
+            return False
+        return True
+
+    @staticmethod
+    def _inline_separator(previous_text: str, current_text: str) -> str:
+        if re.search(r"[A-Za-z0-9]$", previous_text) and re.match(r"^[A-Za-z0-9]", current_text):
+            return " "
+        if previous_text.endswith(("(", "（", "[", "【", "“", "\"", "'")):
+            return ""
+        if current_text.startswith((")", "）", "]", "】", "”", "\"", "'", "，", "。", "！", "？", "；", "：", ",", ".", "!", "?", ";", ":")):
+            return ""
+        return ""
 
     def _build_overlap_tail(self, text_parts: list[str]) -> list[str]:
         if self.config.overlap <= 0:
