@@ -25,6 +25,9 @@ class ResearchState(TypedDict, total=False):
     claims: list[dict[str, Any]]
     citation_map: list[dict[str, Any]]
     confidence: str
+    model: str
+    prompt_family: str
+    embedding_backend: str
     next_action: str
     retry_count: int
     max_retry_count: int

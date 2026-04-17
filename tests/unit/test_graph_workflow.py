@@ -6,6 +6,7 @@ from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.prompts.qwen import QwenPromptTemplate
 from src.graph.nodes.citation_auditor import CitationAuditorNode
+from src.graph.nodes.query_planner import QueryPlannerNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
 from src.graph.nodes.synthesizer import SynthesizerNode
 from src.graph.router import Router
@@ -95,6 +96,29 @@ class QueryWorkflowTests(unittest.TestCase):
         self.assertIn("retrieved_candidates", state)
         self.assertIn("draft_answer", state)
         self.assertIn("citation_map", state)
+
+
+class QueryPlannerNodeTests(unittest.TestCase):
+    def test_query_planner_builds_normalized_query_and_plan(self) -> None:
+        node = QueryPlannerNode()
+
+        state = node.run({"user_query": "  Sora 2   有什么升级？  "})
+
+        self.assertEqual(state["normalized_query"], "Sora 2 有什么升级?")
+        self.assertEqual(state["current_intent"], "qa")
+        self.assertEqual(state["retrieval_plan"]["mode"], "hybrid")
+        self.assertEqual(state["next_action"], "retrieval_strategist")
+
+    def test_query_planner_marks_structured_query_preferences(self) -> None:
+        node = QueryPlannerNode()
+
+        state = node.run({"user_query": "比亚迪 图表 2025 年销量对比"})
+
+        self.assertEqual(state["current_intent"], "compare")
+        self.assertTrue(state["retrieval_plan"]["prefers_structured_blocks"])
+        self.assertTrue(state["retrieval_plan"]["tables_only"])
+        self.assertEqual(state["current_time_range"]["years"], ["2025"])
+        self.assertIn("structured_preferred", state["current_sub_intents"])
 
 
 class _FakeSearchService:

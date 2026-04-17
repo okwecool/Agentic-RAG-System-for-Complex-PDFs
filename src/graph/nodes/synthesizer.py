@@ -52,6 +52,10 @@ class SynthesizerNode:
         state["draft_answer"] = generation["answer"]
         state["claims"] = generation.get("claims", [])
         state["confidence"] = generation.get("confidence", state.get("confidence", "low"))
+        if generation.get("model"):
+            state["model"] = generation["model"]
+        if generation.get("prompt_family"):
+            state["prompt_family"] = generation["prompt_family"]
         state["next_action"] = "citation_auditor"
         return state
 

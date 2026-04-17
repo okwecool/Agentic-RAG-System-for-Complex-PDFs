@@ -67,6 +67,11 @@ class RetrievalStrategistNode:
                     self._infer_document_source_type(candidate)
                     for candidate in state["selected_evidence"]
                 ]
+                state["embedding_backend"] = getattr(
+                    self.search_service,
+                    "embedding_backend",
+                    "unknown",
+                )
                 state["retry_count"] = int(state.get("retry_count", 0) or 0) + 1
                 return state
 
@@ -93,6 +98,7 @@ class RetrievalStrategistNode:
                 for evidence in state["selected_evidence"]
             ]
         state.setdefault("document_source_types", ["unknown"])
+        state.setdefault("embedding_backend", "unknown")
         state["retry_count"] = int(state.get("retry_count", 0) or 0) + 1
         return state
 
