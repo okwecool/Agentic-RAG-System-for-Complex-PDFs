@@ -35,6 +35,8 @@ class QueryWorkflow:
     def from_settings(cls, settings: Settings, max_steps: int = 8) -> "QueryWorkflow":
         return cls(
             retrieval_strategist=RetrievalStrategistNode.from_settings(settings),
+            synthesizer=SynthesizerNode.from_settings(settings),
+            citation_auditor=CitationAuditorNode.from_settings(),
             max_steps=max_steps,
         )
 

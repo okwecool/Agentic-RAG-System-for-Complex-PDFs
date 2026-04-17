@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from src.generation.answer_generator import AnswerGenerator
+from src.generation.citation_auditor import CitationAuditor
+from src.generation.prompts.qwen import QwenPromptTemplate
+from src.graph.nodes.citation_auditor import CitationAuditorNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
+from src.graph.nodes.synthesizer import SynthesizerNode
 from src.graph.router import Router
 from src.graph.workflow import QueryWorkflow
 
@@ -142,6 +147,14 @@ class _FakeSearchService:
         ][:top_k]
 
 
+class _FakeLlmProvider:
+    backend = "fake"
+    model_name = "fake-model"
+
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        return "根据证据，Sora 2 实现了原生音视频同步。"
+
+
 class RetrievalStrategistNodeTests(unittest.TestCase):
     def test_retrieval_strategist_uses_search_service_for_chunks(self) -> None:
         node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
@@ -171,6 +184,46 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
 
         self.assertEqual(len(state["retrieved_candidates"]), 1)
         self.assertEqual(state["candidate_evidence_types"], ["table_evidence"])
+
+
+class GenerationNodeTests(unittest.TestCase):
+    def test_synthesizer_node_uses_answer_generator(self) -> None:
+        node = SynthesizerNode(
+            answer_generator=AnswerGenerator(_FakeLlmProvider(), QwenPromptTemplate()),
+            default_top_k=2,
+        )
+        state = node.run(
+            {
+                "user_query": "Sora 2 有什么升级？",
+                "normalized_query": "Sora 2 有什么升级？",
+                "retrieval_plan": {"top_k": 2},
+                "selected_evidence": _FakeSearchService().search_chunks("Sora 2", top_k=1),
+            }
+        )
+
+        self.assertIn("原生音视频同步", state["draft_answer"])
+        self.assertEqual(state["confidence"], "medium")
+        self.assertEqual(state["next_action"], "citation_auditor")
+        self.assertEqual(len(state["claims"]), 1)
+
+    def test_citation_auditor_node_uses_auditor(self) -> None:
+        node = CitationAuditorNode(citation_auditor=CitationAuditor())
+        evidence = _FakeSearchService().search_chunks("Sora 2", top_k=1)
+        state = node.run(
+            {
+                "claims": [
+                    {
+                        "claim": "根据证据，Sora 2 实现了原生音视频同步。",
+                        "supporting_chunk_ids": ["doc_test_p3_c1"],
+                    }
+                ],
+                "selected_evidence": evidence,
+                "confidence": "medium",
+            }
+        )
+
+        self.assertEqual(len(state["citation_map"]), 1)
+        self.assertEqual(state["confidence"], "medium")
 
 
 if __name__ == "__main__":
