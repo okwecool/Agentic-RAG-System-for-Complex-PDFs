@@ -23,10 +23,31 @@ def format_answer(result: dict) -> str:
         f'Confidence: {result["confidence"]}',
         f'Model: {result.get("model") or "unknown"}',
         f'Embedding: {result["embedding_backend"]}',
-        "",
-        "Answer:",
-        result["answer"],
     ]
+    if result.get("workflow_status"):
+        lines.append(f'Workflow Status: {result["workflow_status"]}')
+    if result.get("route_type"):
+        lines.append(f'Route Type: {result["route_type"]}')
+    lines.extend(
+        [
+            "",
+            "Answer:",
+            result["answer"],
+        ]
+    )
+    route_trace = result.get("route_trace", [])
+    if route_trace:
+        lines.append("")
+        lines.append("Route Trace:")
+        for entry in route_trace:
+            lines.append(
+                f'{entry.get("step")}. node={entry.get("next_node")} '
+                f'reason={entry.get("reason")} route_type={entry.get("route_type")}'
+            )
+            summary = entry.get("node_summary") or {}
+            if summary:
+                parts = [f"{key}={value}" for key, value in summary.items()]
+                lines.append(f"   summary: {', '.join(parts)}")
     citations = result.get("citations", [])
     if citations:
         lines.append("")

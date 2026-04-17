@@ -17,6 +17,7 @@ class ResearchState(TypedDict, total=False):
     current_sub_intents: list[str]
     retrieval_plan: dict[str, Any]
     route_decision: RouteDecision
+    route_trace: list[dict[str, Any]]
     retrieved_candidates: list[dict[str, Any]]
     candidate_evidence_types: list[str]
     selected_evidence: list[dict[str, Any]]

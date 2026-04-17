@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from dataclasses import dataclass
+import logging
 
 from src.config.settings import Settings
 from src.domain.models.citation import Citation
 from src.domain.models.state import ResearchState
 from src.graph.workflow import QueryWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -25,6 +28,12 @@ class AgenticQaService:
 
     def answer(self, query: str, top_k: int | None = None, tables_only: bool = False) -> dict:
         resolved_top_k = top_k or self.top_k
+        logger.info(
+            "agentic_qa.start query=%r top_k=%s tables_only=%s",
+            query,
+            resolved_top_k,
+            tables_only,
+        )
         initial_state: ResearchState = {
             "user_query": query,
             "retry_count": 0,
@@ -35,6 +44,16 @@ class AgenticQaService:
             },
         }
         final_state = self.workflow.run(initial_state)
+        logger.info(
+            "agentic_qa.finish workflow_status=%s route_type=%s retrieved=%s selected=%s confidence=%s model=%s trace_len=%s",
+            final_state.get("workflow_status"),
+            (final_state.get("route_decision") or {}).get("route_type"),
+            len(final_state.get("retrieved_candidates", [])),
+            len(final_state.get("selected_evidence", [])),
+            final_state.get("confidence"),
+            final_state.get("model"),
+            len(final_state.get("route_trace", [])),
+        )
         selected_evidence = list(final_state.get("selected_evidence", []))
         citations = self._build_citations(
             citation_map=list(final_state.get("citation_map", [])),
@@ -52,6 +71,7 @@ class AgenticQaService:
             "evidence": [self._serialize_evidence(item) for item in selected_evidence],
             "workflow_status": final_state.get("workflow_status"),
             "route_type": (final_state.get("route_decision") or {}).get("route_type"),
+            "route_trace": list(final_state.get("route_trace", [])),
         }
 
     @staticmethod

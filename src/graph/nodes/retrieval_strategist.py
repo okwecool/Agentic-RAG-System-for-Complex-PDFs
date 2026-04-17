@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from src.config.settings import Settings
 from src.domain.models.state import ResearchState
 from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.search_service import SearchService
+
+logger = logging.getLogger(__name__)
 
 
 class RetrievalStrategistNode:
@@ -47,6 +51,14 @@ class RetrievalStrategistNode:
             plan = state.get("retrieval_plan", {})
             top_k = int(plan.get("top_k", self.default_top_k))
             tables_only = bool(plan.get("tables_only", False))
+            logger.info(
+                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s",
+                query,
+                top_k,
+                tables_only,
+                plan.get("intent"),
+                plan.get("prefers_structured_blocks"),
+            )
             if query:
                 results = (
                     self.search_service.search_tables(query, top_k=top_k)
@@ -73,6 +85,16 @@ class RetrievalStrategistNode:
                     "unknown",
                 )
                 state["retry_count"] = int(state.get("retry_count", 0) or 0) + 1
+                logger.info(
+                    "retrieval.result retrieved=%s selected=%s candidate_types=%s selected_types=%s document_source_types=%s retry_count=%s embedding=%s",
+                    len(state["retrieved_candidates"]),
+                    len(state["selected_evidence"]),
+                    state["candidate_evidence_types"],
+                    state["selected_evidence_types"],
+                    state["document_source_types"],
+                    state["retry_count"],
+                    state["embedding_backend"],
+                )
                 return state
 
         if not state.get("retrieved_candidates"):
@@ -100,6 +122,13 @@ class RetrievalStrategistNode:
         state.setdefault("document_source_types", ["unknown"])
         state.setdefault("embedding_backend", "unknown")
         state["retry_count"] = int(state.get("retry_count", 0) or 0) + 1
+        logger.info(
+            "retrieval.placeholder retrieved=%s selected=%s selected_types=%s retry_count=%s",
+            len(state["retrieved_candidates"]),
+            len(state["selected_evidence"]),
+            state["selected_evidence_types"],
+            state["retry_count"],
+        )
         return state
 
     @staticmethod

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from src.domain.models.state import ResearchState
 from src.retrieval.signals import SearchSignals
+
+logger = logging.getLogger(__name__)
 
 
 class QueryPlannerNode:
@@ -25,21 +28,40 @@ class QueryPlannerNode:
             time_range=state["current_time_range"],
         )
         state["next_action"] = "retrieval_strategist"
+        logger.info(
+            "planner.plan normalized_query=%r intent=%s sub_intents=%s time_range=%s retrieval_plan=%s",
+            state["normalized_query"],
+            state["current_intent"],
+            state["current_sub_intents"],
+            state["current_time_range"],
+            state["retrieval_plan"],
+        )
         return state
 
     @staticmethod
     def _normalize_query(query: str) -> str:
         query = " ".join(query.strip().split())
-        query = query.replace("？", "?").replace("，", "，").replace("：", "：")
+        replacements = {
+            "？": "?",
+            "！": "!",
+            "，": ", ",
+            "：": ": ",
+            "；": "; ",
+            "（": "(",
+            "）": ")",
+        }
+        for src, target in replacements.items():
+            query = query.replace(src, target)
+        query = re.sub(r"\s+", " ", query).strip()
         return query
 
     @staticmethod
     def _infer_intent(normalized_query: str, query_signature) -> str:
+        lowered = normalized_query.lower()
         structured_markers = ("图", "图表", "表", "table", "chart", "figure")
         compare_markers = ("对比", "比较", "区别", "vs", "versus")
-        summary_markers = ("总结", "概述", "综述", "介绍")
+        summary_markers = ("总结", "概述", "综述", "介绍", "有哪些", "信息")
 
-        lowered = normalized_query.lower()
         if any(marker in lowered for marker in compare_markers):
             return "compare"
         if any(marker in normalized_query for marker in summary_markers):
@@ -55,7 +77,7 @@ class QueryPlannerNode:
             sub_intents.append("time_grounded")
         if query_signature.prefers_structured_blocks:
             sub_intents.append("structured_preferred")
-        if re.search(r"(多少|几|占比|比例|增长|同比|环比|数值|金额|规模)", normalized_query):
+        if re.search(r"(多少|占比|比例|增长|同比|环比|数值|金额|规模)", normalized_query):
             sub_intents.append("fact_lookup")
         if re.search(r"(为什么|原因|影响|驱动|逻辑)", normalized_query):
             sub_intents.append("reasoning")
@@ -64,7 +86,7 @@ class QueryPlannerNode:
     @staticmethod
     def _extract_time_range(normalized_query: str) -> dict[str, object]:
         raw_terms = re.findall(
-            r"20\d{2}(?:Q[1-4]|q[1-4]|H[12]|h[12]|M\d{1,2}|m\d{1,2}|年|Q1-3|q1-3|1-3Q|1-3q)?",
+            r"20\d{2}(?:Q[1-4]|q[1-4]|H[12]|h[12]|M\d{1,2}|m\d{1,2}|年Q1-3|q1-3|1-3Q|1-3q)?",
             normalized_query,
         )
         normalized_terms = [term.upper() for term in raw_terms]
@@ -106,9 +128,8 @@ class QueryPlannerNode:
 
     @staticmethod
     def _estimate_complexity(normalized_query: str) -> str:
-        if len(normalized_query) >= 30 or len(re.findall(r"[，,、和及并且以及]", normalized_query)) >= 2:
+        if len(normalized_query) >= 30 or len(re.findall(r"[,、和及并且以及]", normalized_query)) >= 2:
             return "high"
         if len(normalized_query) >= 16:
             return "medium"
         return "low"
-

@@ -96,6 +96,9 @@ class QueryWorkflowTests(unittest.TestCase):
         self.assertIn("retrieved_candidates", state)
         self.assertIn("draft_answer", state)
         self.assertIn("citation_map", state)
+        self.assertIn("route_trace", state)
+        self.assertGreaterEqual(len(state["route_trace"]), 1)
+        self.assertEqual("query_planner", state["route_trace"][0]["next_node"])
 
 
 class QueryPlannerNodeTests(unittest.TestCase):
@@ -122,6 +125,8 @@ class QueryPlannerNodeTests(unittest.TestCase):
 
 
 class _FakeSearchService:
+    embedding_backend = "fake-embedding"
+
     def search_chunks(self, query: str, top_k: int = 10) -> list[dict]:
         from src.domain.models.document import Chunk
 
@@ -192,8 +197,14 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
         )
 
         self.assertEqual(len(state["retrieved_candidates"]), 2)
-        self.assertEqual(state["candidate_evidence_types"], ["narrative_evidence", "caption_evidence"])
-        self.assertEqual(state["document_source_types"], ["research_report", "research_report"])
+        self.assertEqual(
+            state["candidate_evidence_types"],
+            ["narrative_evidence", "caption_evidence"],
+        )
+        self.assertEqual(
+            state["document_source_types"],
+            ["research_report", "research_report"],
+        )
 
     def test_retrieval_strategist_uses_search_service_for_tables(self) -> None:
         node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)

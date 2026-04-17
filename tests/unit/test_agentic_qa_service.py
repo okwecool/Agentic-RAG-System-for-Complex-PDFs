@@ -37,6 +37,27 @@ class _StubWorkflow:
             ],
             "workflow_status": "completed",
             "route_decision": {"route_type": "audit"},
+            "route_trace": [
+                {
+                    "step": 1,
+                    "next_node": "query_planner",
+                    "reason": "missing_plan",
+                    "route_type": "plan_then_retrieve",
+                    "node_summary": {
+                        "intent": "summary",
+                        "top_k": 3,
+                    },
+                },
+                {
+                    "step": 2,
+                    "next_node": "finish",
+                    "reason": "workflow_complete",
+                    "route_type": "finish",
+                    "node_summary": {
+                        "workflow_status": "completed",
+                    },
+                },
+            ],
         }
 
 
@@ -64,6 +85,8 @@ class AgenticQaServiceTests(unittest.TestCase):
         self.assertEqual("audit", result["route_type"])
         self.assertEqual(1, len(result["citations"]))
         self.assertEqual(1, len(result["evidence"]))
+        self.assertEqual(2, len(result["route_trace"]))
+        self.assertEqual("query_planner", result["route_trace"][0]["next_node"])
 
 
 if __name__ == "__main__":
