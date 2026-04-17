@@ -22,6 +22,8 @@ def append_user_message(state: dict, content: str) -> dict:
 
 
 def append_assistant_message(state: dict, result: dict) -> dict:
+    if result.get("session_id"):
+        state["session_id"] = result["session_id"]
     state.setdefault("messages", []).append(
         {
             "role": "assistant",
@@ -35,6 +37,7 @@ def append_assistant_message(state: dict, result: dict) -> dict:
                 "retrieved_count": result.get("retrieved_count"),
                 "workflow_status": result.get("workflow_status"),
                 "route_type": result.get("route_type"),
+                "turn_index": result.get("turn_index"),
             },
         }
     )

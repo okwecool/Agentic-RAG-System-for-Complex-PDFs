@@ -27,6 +27,7 @@ class HttpQaClient:
             "query": query,
             "top_k": top_k,
             "tables_only": tables_only,
+            "session_id": session_id,
         }
         url = self._ask_agentic_url if qa_mode == "agentic" else self._ask_url
         data = json.dumps(payload).encode("utf-8")

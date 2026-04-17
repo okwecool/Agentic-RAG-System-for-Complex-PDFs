@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 
 from src.generation.agentic_qa_service import AgenticQaService
+from src.memory.summarizer import ConversationSummarizer
+from src.memory.thread_store import InMemoryThreadStore
 
 
 class _StubWorkflow:
@@ -12,8 +14,14 @@ class _StubWorkflow:
     def run(self, initial_state: dict) -> dict:
         self.last_initial_state = dict(initial_state)
         query = initial_state["user_query"]
+        messages = list(initial_state.get("messages", []))
         return {
+            "session_id": initial_state.get("session_id"),
+            "thread_id": initial_state.get("thread_id"),
+            "turn_index": initial_state.get("turn_index"),
             "user_query": query,
+            "messages": messages,
+            "current_entities": {"current_query_entities": ["英伟达"]} if "英伟达" in query else {},
             "draft_answer": "这是 agentic 测试答案。",
             "confidence": "medium",
             "model": "stub-model",
@@ -44,22 +52,17 @@ class _StubWorkflow:
             "route_trace": [
                 {
                     "step": 1,
-                    "next_node": "query_planner",
-                    "reason": "missing_plan",
-                    "route_type": "plan_then_retrieve",
-                    "node_summary": {
-                        "intent": "summary",
-                        "top_k": 3,
-                    },
+                    "next_node": "conversation_resolver",
+                    "reason": "missing_conversation_resolution",
+                    "route_type": "resolve_then_plan",
+                    "node_summary": {"message_count": len(messages)},
                 },
                 {
                     "step": 2,
                     "next_node": "finish",
                     "reason": "workflow_complete",
                     "route_type": "finish",
-                    "node_summary": {
-                        "workflow_status": "completed",
-                    },
+                    "node_summary": {"workflow_status": "completed"},
                 },
             ],
         }
@@ -77,7 +80,12 @@ class _StubChunk:
 class AgenticQaServiceTests(unittest.TestCase):
     def test_agentic_qa_service_serializes_workflow_output(self) -> None:
         workflow = _StubWorkflow()
-        service = AgenticQaService(workflow=workflow, top_k=3)
+        service = AgenticQaService(
+            workflow=workflow,
+            thread_store=InMemoryThreadStore(),
+            summarizer=ConversationSummarizer(),
+            top_k=3,
+        )
 
         result = service.answer("测试问题")
 
@@ -91,12 +99,36 @@ class AgenticQaServiceTests(unittest.TestCase):
         self.assertEqual(1, len(result["citations"]))
         self.assertEqual(1, len(result["evidence"]))
         self.assertEqual(2, len(result["route_trace"]))
-        self.assertEqual("query_planner", result["route_trace"][0]["next_node"])
+        self.assertEqual("conversation_resolver", result["route_trace"][0]["next_node"])
+        self.assertTrue(result["session_id"])
+        self.assertEqual(1, result["turn_index"])
         self.assertEqual(
             {"top_k": 3, "tables_only": False},
             workflow.last_initial_state["request_options"],
         )
         self.assertNotIn("retrieval_plan", workflow.last_initial_state)
+
+    def test_agentic_qa_service_persists_session_state_between_turns(self) -> None:
+        workflow = _StubWorkflow()
+        thread_store = InMemoryThreadStore()
+        service = AgenticQaService(
+            workflow=workflow,
+            thread_store=thread_store,
+            summarizer=ConversationSummarizer(),
+            top_k=3,
+        )
+
+        first = service.answer("英伟达近期发展势头如何？", session_id="session-1")
+        second = service.answer("那它今年呢？", session_id="session-1")
+
+        self.assertEqual("session-1", first["session_id"])
+        self.assertEqual("session-1", second["session_id"])
+        self.assertEqual(2, second["turn_index"])
+        persisted = thread_store.get("session-1")
+        self.assertEqual(4, len(persisted["messages"]))
+        self.assertIn("user: 英伟达近期发展势头如何？", persisted["conversation_summary"])
+        self.assertIn("assistant: 这是 agentic 测试答案。", persisted["conversation_summary"])
+        self.assertEqual("英伟达", persisted["current_entities"]["last_entity"])
 
 
 if __name__ == "__main__":

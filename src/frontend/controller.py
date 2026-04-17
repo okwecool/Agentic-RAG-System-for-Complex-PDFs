@@ -91,6 +91,9 @@ class FrontendController:
                 self.initial_trace_markdown(),
             )
 
+        if result.get("session_id"):
+            state["session_id"] = result["session_id"]
+
         append_assistant_message(state, result)
         history.append({"role": "user", "content": normalized_query})
         history.append({"role": "assistant", "content": result.get("answer", "")})
@@ -128,6 +131,10 @@ class FrontendController:
             f"- Top K：`{top_k}`",
             f"- 仅表格：`{tables_only}`",
         ]
+        if result.get("session_id"):
+            lines.append(f'- Session：`{result.get("session_id")}`')
+        if result.get("turn_index") is not None:
+            lines.append(f'- Turn：`{result.get("turn_index")}`')
         if result.get("workflow_status"):
             lines.append(f'- Workflow：`{result.get("workflow_status")}`')
         if result.get("route_type"):
@@ -186,4 +193,10 @@ class FrontendController:
             if summary:
                 summary_text = ", ".join(f"{key}={value}" for key, value in summary.items())
                 lines.append(f"   {summary_text}")
+
+        conversation_summary = result.get("conversation_summary")
+        if conversation_summary:
+            lines.append("")
+            lines.append("### 会话摘要")
+            lines.append(conversation_summary)
         return "\n".join(lines)

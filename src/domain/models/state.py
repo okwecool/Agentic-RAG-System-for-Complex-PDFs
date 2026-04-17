@@ -6,8 +6,12 @@ from src.domain.models.routing import RouteDecision
 
 
 class ResearchState(TypedDict, total=False):
+    session_id: str
     thread_id: str
+    turn_index: int
+    messages: list[dict[str, Any]]
     user_query: str
+    resolved_user_query: str
     normalized_query: str
     workflow_status: str
     current_domain: str

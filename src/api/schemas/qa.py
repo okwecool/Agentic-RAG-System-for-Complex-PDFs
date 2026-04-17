@@ -9,6 +9,7 @@ class QaRequest(BaseModel):
     query: str = Field(min_length=1, description="User question.")
     top_k: int | None = Field(default=None, ge=1, le=20)
     tables_only: bool = False
+    session_id: str | None = None
 
 
 class CitationResponse(BaseModel):
@@ -34,6 +35,9 @@ class QaResponse(BaseModel):
     query: str
     answer: str
     confidence: str
+    session_id: str | None = None
+    turn_index: int | None = None
+    conversation_summary: str | None = None
     model: str | None = None
     prompt_family: str | None = None
     embedding_backend: str

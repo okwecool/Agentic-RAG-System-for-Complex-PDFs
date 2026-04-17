@@ -29,6 +29,7 @@ def ask_question(
             query=payload.query,
             top_k=payload.top_k,
             tables_only=payload.tables_only,
+            session_id=payload.session_id,
         )
     except (FileNotFoundError, ValueError, NotImplementedError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

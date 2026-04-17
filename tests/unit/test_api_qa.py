@@ -16,11 +16,18 @@ except ModuleNotFoundError:  # pragma: no cover - environment-specific dependenc
 
 
 class StubQaService:
-    def answer(self, query: str, top_k: int | None = None, tables_only: bool = False) -> dict:
+    def answer(
+        self,
+        query: str,
+        top_k: int | None = None,
+        tables_only: bool = False,
+        session_id: str | None = None,
+    ) -> dict:
         return {
             "query": query,
             "answer": "测试答案",
             "confidence": "medium",
+            "session_id": session_id,
             "model": "stub-model",
             "prompt_family": "qwen",
             "embedding_backend": "stub-embedding",
@@ -85,4 +92,23 @@ class ApiQaTests(unittest.TestCase):
         self.assertEqual("测试答案", payload["answer"])
         self.assertEqual("stub-model", payload["model"])
         self.assertEqual(1, len(payload["citations"]))
+        app.dependency_overrides.clear()
+
+    @unittest.skipIf(
+        TestClient is None or create_app is None,
+        "fastapi test client is not installed",
+    )
+    def test_agentic_qa_route_accepts_session_id(self) -> None:
+        app = create_app()
+        app.dependency_overrides[get_agentic_qa_service] = lambda: StubQaService()
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/qa/ask-agentic",
+            json={"query": "测试问题", "session_id": "session-1"},
+        )
+
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual("session-1", payload["session_id"])
         app.dependency_overrides.clear()

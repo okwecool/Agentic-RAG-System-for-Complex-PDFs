@@ -13,7 +13,12 @@ logger = logging.getLogger(__name__)
 
 class QueryPlannerNode:
     def run(self, state: ResearchState) -> ResearchState:
-        raw_query = state.get("user_query") or state.get("normalized_query") or ""
+        raw_query = (
+            state.get("resolved_user_query")
+            or state.get("user_query")
+            or state.get("normalized_query")
+            or ""
+        )
         normalized_query = self._normalize_query(raw_query)
         query_signature = SearchSignals.build_query_signature(normalized_query)
         request_options = state.get("request_options", {})

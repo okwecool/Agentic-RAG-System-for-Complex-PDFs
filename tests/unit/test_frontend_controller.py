@@ -19,6 +19,9 @@ class _FakeQaClient:
             "query": query,
             "answer": "这是一个测试回答。",
             "confidence": "medium",
+            "session_id": session_id or "session-1",
+            "turn_index": 1 if not session_id else 2,
+            "conversation_summary": "user: 测试问题\nassistant: 这是一个测试回答。",
             "model": "stub-model",
             "prompt_family": "qwen",
             "embedding_backend": "sentence_transformer",
@@ -52,10 +55,13 @@ class _FakeQaClient:
                     "route_type": "finish",
                     "route_trace": [
                         {
-                            "next_node": "query_planner",
-                            "reason": "missing_plan",
-                            "route_type": "plan_then_retrieve",
-                            "node_summary": {"intent": "qa", "top_k": top_k},
+                            "next_node": "conversation_resolver",
+                            "reason": "missing_conversation_resolution",
+                            "route_type": "resolve_then_plan",
+                            "node_summary": {
+                                "resolved_user_query": query,
+                                "message_count": 2 if session_id else 0,
+                            },
                         },
                         {
                             "next_node": "finish",
@@ -82,7 +88,7 @@ class _FailingQaClient:
 
 
 class FrontendControllerTests(unittest.TestCase):
-    def test_handle_question_updates_history_and_state_for_standard_mode(self) -> None:
+    def test_handle_question_updates_history_and_session_for_standard_mode(self) -> None:
         controller = FrontendController(_FakeQaClient())
 
         _, history, state, citations_md, evidence_md, status_md, trace_md = controller.handle_question(
@@ -101,8 +107,8 @@ class FrontendControllerTests(unittest.TestCase):
                 {"role": "assistant", "content": "这是一个测试回答。"},
             ],
         )
+        self.assertEqual("session-1", state["session_id"])
         self.assertEqual(len(state["messages"]), 2)
-        self.assertEqual(state["last_mode"], "standard")
         self.assertIn("doc_test", citations_md)
         self.assertIn("测试证据内容", evidence_md)
         self.assertIn("stub-model", status_md)
@@ -110,11 +116,13 @@ class FrontendControllerTests(unittest.TestCase):
 
     def test_handle_question_renders_agentic_trace(self) -> None:
         controller = FrontendController(_FakeQaClient())
+        initial_state = create_session_state()
+        initial_state["session_id"] = "session-1"
 
         _, history, state, _, _, status_md, trace_md = controller.handle_question(
-            query="测试 agentic 问题",
+            query="那它今年呢？",
             chat_history=[],
-            session_state=create_session_state(),
+            session_state=initial_state,
             top_k=6,
             tables_only=False,
             qa_mode="agentic",
@@ -122,10 +130,11 @@ class FrontendControllerTests(unittest.TestCase):
 
         self.assertEqual(history[1]["content"], "这是一个测试回答。")
         self.assertEqual(state["last_mode"], "agentic")
+        self.assertEqual("session-1", state["session_id"])
         self.assertIn("Workflow", status_md)
-        self.assertIn("completed", status_md)
-        self.assertIn("query_planner", trace_md)
-        self.assertIn("workflow_status=completed", trace_md)
+        self.assertIn("Turn", status_md)
+        self.assertIn("conversation_resolver", trace_md)
+        self.assertIn("会话摘要", trace_md)
 
     def test_handle_question_returns_hint_for_empty_query(self) -> None:
         controller = FrontendController(_FakeQaClient())

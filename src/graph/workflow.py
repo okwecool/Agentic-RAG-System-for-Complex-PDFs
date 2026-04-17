@@ -7,6 +7,7 @@ import logging
 from src.config.settings import Settings
 from src.domain.models.state import ResearchState
 from src.graph.nodes.citation_auditor import CitationAuditorNode
+from src.graph.nodes.conversation_resolver import ConversationResolverNode
 from src.graph.nodes.query_planner import QueryPlannerNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
 from src.graph.nodes.supervisor import SupervisorNode
@@ -21,6 +22,7 @@ class QueryWorkflow:
         self,
         router: Router | None = None,
         supervisor: SupervisorNode | None = None,
+        conversation_resolver: ConversationResolverNode | None = None,
         query_planner: QueryPlannerNode | None = None,
         retrieval_strategist: RetrievalStrategistNode | None = None,
         synthesizer: SynthesizerNode | None = None,
@@ -29,6 +31,7 @@ class QueryWorkflow:
     ) -> None:
         self.router = router or Router()
         self.supervisor = supervisor or SupervisorNode()
+        self.conversation_resolver = conversation_resolver or ConversationResolverNode()
         self.query_planner = query_planner or QueryPlannerNode()
         self.retrieval_strategist = retrieval_strategist or RetrievalStrategistNode()
         self.synthesizer = synthesizer or SynthesizerNode()
@@ -91,6 +94,11 @@ class QueryWorkflow:
                     len(state.get("route_trace", [])),
                 )
                 break
+            if next_node == "conversation_resolver":
+                self.conversation_resolver.run(state)
+                trace_entry["node_summary"] = self._summarize_conversation_resolution(state)
+                state["route_trace"].append(trace_entry)
+                continue
             if next_node == "query_planner":
                 self.query_planner.run(state)
                 trace_entry["node_summary"] = self._summarize_planner(state)
@@ -142,6 +150,15 @@ class QueryWorkflow:
             "top_k": retrieval_plan.get("top_k"),
             "tables_only": retrieval_plan.get("tables_only"),
             "time_terms": list(retrieval_plan.get("time_terms", [])),
+        }
+
+    @staticmethod
+    def _summarize_conversation_resolution(state: ResearchState) -> dict:
+        current_entities = state.get("current_entities", {})
+        return {
+            "resolved_user_query": state.get("resolved_user_query"),
+            "conversation_anchor": current_entities.get("conversation_anchor"),
+            "message_count": len(state.get("messages", [])),
         }
 
     @staticmethod

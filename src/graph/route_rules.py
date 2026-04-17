@@ -21,6 +21,10 @@ def has_plan(state: ResearchState) -> bool:
     return required_keys.issubset(retrieval_plan.keys())
 
 
+def has_resolved_query(state: ResearchState) -> bool:
+    return bool((state.get("resolved_user_query") or "").strip())
+
+
 def has_candidates(state: ResearchState) -> bool:
     return bool(state.get("retrieved_candidates"))
 
