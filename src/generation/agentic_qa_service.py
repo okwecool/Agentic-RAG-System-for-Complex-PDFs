@@ -38,7 +38,7 @@ class AgenticQaService:
             "user_query": query,
             "retry_count": 0,
             "max_retry_count": 2,
-            "retrieval_plan": {
+            "request_options": {
                 "top_k": resolved_top_k,
                 "tables_only": tables_only,
             },

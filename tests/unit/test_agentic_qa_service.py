@@ -6,7 +6,11 @@ from src.generation.agentic_qa_service import AgenticQaService
 
 
 class _StubWorkflow:
+    def __init__(self) -> None:
+        self.last_initial_state: dict | None = None
+
     def run(self, initial_state: dict) -> dict:
+        self.last_initial_state = dict(initial_state)
         query = initial_state["user_query"]
         return {
             "user_query": query,
@@ -72,7 +76,8 @@ class _StubChunk:
 
 class AgenticQaServiceTests(unittest.TestCase):
     def test_agentic_qa_service_serializes_workflow_output(self) -> None:
-        service = AgenticQaService(workflow=_StubWorkflow(), top_k=3)
+        workflow = _StubWorkflow()
+        service = AgenticQaService(workflow=workflow, top_k=3)
 
         result = service.answer("测试问题")
 
@@ -87,6 +92,11 @@ class AgenticQaServiceTests(unittest.TestCase):
         self.assertEqual(1, len(result["evidence"]))
         self.assertEqual(2, len(result["route_trace"]))
         self.assertEqual("query_planner", result["route_trace"][0]["next_node"])
+        self.assertEqual(
+            {"top_k": 3, "tables_only": False},
+            workflow.last_initial_state["request_options"],
+        )
+        self.assertNotIn("retrieval_plan", workflow.last_initial_state)
 
 
 if __name__ == "__main__":

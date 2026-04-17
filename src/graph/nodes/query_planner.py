@@ -16,6 +16,7 @@ class QueryPlannerNode:
         raw_query = state.get("user_query") or state.get("normalized_query") or ""
         normalized_query = self._normalize_query(raw_query)
         query_signature = SearchSignals.build_query_signature(normalized_query)
+        request_options = state.get("request_options", {})
 
         state["normalized_query"] = normalized_query
         state["current_intent"] = self._infer_intent(normalized_query, query_signature)
@@ -26,14 +27,16 @@ class QueryPlannerNode:
             intent=state["current_intent"],
             query_signature=query_signature,
             time_range=state["current_time_range"],
+            request_options=request_options,
         )
         state["next_action"] = "retrieval_strategist"
         logger.info(
-            "planner.plan normalized_query=%r intent=%s sub_intents=%s time_range=%s retrieval_plan=%s",
+            "planner.plan normalized_query=%r intent=%s sub_intents=%s time_range=%s request_options=%s retrieval_plan=%s",
             state["normalized_query"],
             state["current_intent"],
             state["current_sub_intents"],
             state["current_time_range"],
+            request_options,
             state["retrieval_plan"],
         )
         return state
@@ -103,6 +106,7 @@ class QueryPlannerNode:
         intent: str,
         query_signature,
         time_range: dict[str, object],
+        request_options: dict[str, object],
     ) -> dict[str, object]:
         complexity = self._estimate_complexity(normalized_query)
         prefers_tables = bool(
@@ -115,6 +119,14 @@ class QueryPlannerNode:
             top_k = 6
         elif complexity == "high":
             top_k = 8
+
+        requested_top_k = request_options.get("top_k")
+        if isinstance(requested_top_k, int) and requested_top_k > 0:
+            top_k = requested_top_k
+
+        requested_tables_only = request_options.get("tables_only")
+        if isinstance(requested_tables_only, bool):
+            prefers_tables = requested_tables_only
 
         return {
             "mode": "hybrid",

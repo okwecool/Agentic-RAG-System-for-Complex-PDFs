@@ -14,7 +14,11 @@ def get_max_retry_count(state: ResearchState) -> int:
 
 
 def has_plan(state: ResearchState) -> bool:
-    return bool(state.get("current_intent")) or bool(state.get("retrieval_plan"))
+    if state.get("current_intent"):
+        return True
+    retrieval_plan = state.get("retrieval_plan") or {}
+    required_keys = {"mode", "intent", "complexity"}
+    return required_keys.issubset(retrieval_plan.keys())
 
 
 def has_candidates(state: ResearchState) -> bool:

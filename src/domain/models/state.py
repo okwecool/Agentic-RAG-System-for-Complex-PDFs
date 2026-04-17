@@ -15,6 +15,7 @@ class ResearchState(TypedDict, total=False):
     current_time_range: dict[str, Any]
     current_intent: str
     current_sub_intents: list[str]
+    request_options: dict[str, Any]
     retrieval_plan: dict[str, Any]
     route_decision: RouteDecision
     route_trace: list[dict[str, Any]]

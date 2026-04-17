@@ -5,6 +5,7 @@ import unittest
 from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.prompts.qwen import QwenPromptTemplate
+from src.graph import route_rules
 from src.graph.nodes.citation_auditor import CitationAuditorNode
 from src.graph.nodes.query_planner import QueryPlannerNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
@@ -24,12 +25,23 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(decision["reason"], "missing_plan")
         self.assertTrue(decision["should_continue"])
 
+    def test_router_does_not_treat_request_options_as_plan(self) -> None:
+        decision = self.router.decide(
+            {
+                "user_query": "关于比亚迪有哪些商业信息？",
+                "request_options": {"top_k": 6, "tables_only": False},
+            }
+        )
+
+        self.assertEqual(decision["next_node"], "query_planner")
+        self.assertEqual(decision["reason"], "missing_plan")
+
     def test_router_routes_to_retrieval_when_candidates_missing(self) -> None:
         decision = self.router.decide(
             {
                 "user_query": "Sora 2 有什么升级？",
                 "current_intent": "qa",
-                "retrieval_plan": {"mode": "default"},
+                "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
             }
         )
 
@@ -40,7 +52,7 @@ class RouterTests(unittest.TestCase):
         decision = self.router.decide(
             {
                 "current_intent": "qa",
-                "retrieval_plan": {"mode": "default"},
+                "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
                 "selected_evidence": [{"chunk_id": "c1"}],
                 "selected_evidence_types": ["narrative_evidence"],
@@ -56,7 +68,7 @@ class RouterTests(unittest.TestCase):
         decision = self.router.decide(
             {
                 "current_intent": "qa",
-                "retrieval_plan": {"mode": "default"},
+                "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
                 "selected_evidence": [{"chunk_id": "c1"}],
                 "selected_evidence_types": ["narrative_evidence"],
@@ -71,7 +83,7 @@ class RouterTests(unittest.TestCase):
         decision = self.router.decide(
             {
                 "current_intent": "qa",
-                "retrieval_plan": {"mode": "default"},
+                "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
                 "selected_evidence": [{"chunk_id": "c1"}],
                 "selected_evidence_types": ["narrative_evidence"],
@@ -82,6 +94,16 @@ class RouterTests(unittest.TestCase):
 
         self.assertEqual(decision["next_node"], "finish")
         self.assertFalse(decision["should_continue"])
+
+
+class RouteRulesTests(unittest.TestCase):
+    def test_has_plan_requires_real_planning_fields(self) -> None:
+        self.assertFalse(route_rules.has_plan({"retrieval_plan": {"top_k": 6}}))
+        self.assertTrue(
+            route_rules.has_plan(
+                {"retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"}}
+            )
+        )
 
 
 class QueryWorkflowTests(unittest.TestCase):
@@ -122,6 +144,19 @@ class QueryPlannerNodeTests(unittest.TestCase):
         self.assertTrue(state["retrieval_plan"]["tables_only"])
         self.assertEqual(state["current_time_range"]["years"], ["2025"])
         self.assertIn("structured_preferred", state["current_sub_intents"])
+
+    def test_query_planner_applies_request_options_over_defaults(self) -> None:
+        node = QueryPlannerNode()
+
+        state = node.run(
+            {
+                "user_query": "关于比亚迪有哪些商业信息？",
+                "request_options": {"top_k": 6, "tables_only": False},
+            }
+        )
+
+        self.assertEqual(6, state["retrieval_plan"]["top_k"])
+        self.assertFalse(state["retrieval_plan"]["tables_only"])
 
 
 class _FakeSearchService:
