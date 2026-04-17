@@ -1,5 +1,8 @@
 """Lightweight explicit workflow for agentic query execution."""
 
+from __future__ import annotations
+
+from src.config.settings import Settings
 from src.domain.models.state import ResearchState
 from src.graph.nodes.citation_auditor import CitationAuditorNode
 from src.graph.nodes.query_planner import QueryPlannerNode
@@ -27,6 +30,13 @@ class QueryWorkflow:
         self.synthesizer = synthesizer or SynthesizerNode()
         self.citation_auditor = citation_auditor or CitationAuditorNode()
         self.max_steps = max_steps
+
+    @classmethod
+    def from_settings(cls, settings: Settings, max_steps: int = 8) -> "QueryWorkflow":
+        return cls(
+            retrieval_strategist=RetrievalStrategistNode.from_settings(settings),
+            max_steps=max_steps,
+        )
 
     def run(self, initial_state: ResearchState) -> ResearchState:
         state = dict(initial_state)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
 from src.graph.router import Router
 from src.graph.workflow import QueryWorkflow
 
@@ -89,6 +90,87 @@ class QueryWorkflowTests(unittest.TestCase):
         self.assertIn("retrieved_candidates", state)
         self.assertIn("draft_answer", state)
         self.assertIn("citation_map", state)
+
+
+class _FakeSearchService:
+    def search_chunks(self, query: str, top_k: int = 10) -> list[dict]:
+        from src.domain.models.document import Chunk
+
+        return [
+            {
+                "chunk": Chunk(
+                    chunk_id="doc_test_p3_c1",
+                    doc_id="doc_test",
+                    text="Sora 2 实现了音视频同步。",
+                    page_no=3,
+                    chunk_type="paragraph",
+                    metadata={"document_source_type": "research_report"},
+                ),
+                "score": 0.92,
+                "sources": ["bm25", "vector"],
+            },
+            {
+                "chunk": Chunk(
+                    chunk_id="doc_test_p4_c2",
+                    doc_id="doc_test",
+                    text="图表 5：Sora 2 真实度提升。",
+                    page_no=4,
+                    chunk_type="heading",
+                    metadata={"document_source_type": "research_report"},
+                ),
+                "score": 0.77,
+                "sources": ["vector"],
+            },
+        ][:top_k]
+
+    def search_tables(self, query: str, top_k: int = 10) -> list[dict]:
+        from src.domain.models.document import Chunk
+
+        return [
+            {
+                "chunk": Chunk(
+                    chunk_id="doc_test_p5_c3",
+                    doc_id="doc_test",
+                    text="表头: 指标 | 值",
+                    page_no=5,
+                    chunk_type="table",
+                    metadata={"document_source_type": "research_report"},
+                ),
+                "score": 0.88,
+                "sources": ["vector"],
+            }
+        ][:top_k]
+
+
+class RetrievalStrategistNodeTests(unittest.TestCase):
+    def test_retrieval_strategist_uses_search_service_for_chunks(self) -> None:
+        node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "Sora 2 有什么升级？",
+                "normalized_query": "Sora 2 有什么升级？",
+                "retrieval_plan": {"top_k": 2, "tables_only": False},
+            }
+        )
+
+        self.assertEqual(len(state["retrieved_candidates"]), 2)
+        self.assertEqual(state["candidate_evidence_types"], ["narrative_evidence", "caption_evidence"])
+        self.assertEqual(state["document_source_types"], ["research_report", "research_report"])
+
+    def test_retrieval_strategist_uses_search_service_for_tables(self) -> None:
+        node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "比亚迪 销量",
+                "normalized_query": "比亚迪 销量",
+                "retrieval_plan": {"top_k": 1, "tables_only": True},
+            }
+        )
+
+        self.assertEqual(len(state["retrieved_candidates"]), 1)
+        self.assertEqual(state["candidate_evidence_types"], ["table_evidence"])
 
 
 if __name__ == "__main__":
