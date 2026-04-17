@@ -32,6 +32,12 @@ class Settings:
     dashscope_api_key: str | None = None
     dashscope_base_url: str | None = None
     qa_top_k: int = 6
+    frontend_backend_mode: str = "inprocess"
+    frontend_api_base_url: str | None = None
+    frontend_host: str = "0.0.0.0"
+    frontend_port: int = 7860
+    frontend_title: str = "Agentic RAG Chat"
+    frontend_default_top_k: int = 4
     debug: bool = False
 
 
@@ -104,6 +110,12 @@ def get_settings() -> Settings:
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
         dashscope_base_url=os.getenv("DASHSCOPE_BASE_URL"),
         qa_top_k=int(os.getenv("QA_TOP_K", "6")),
+        frontend_backend_mode=os.getenv("FRONTEND_BACKEND_MODE", "inprocess"),
+        frontend_api_base_url=os.getenv("FRONTEND_API_BASE_URL"),
+        frontend_host=os.getenv("FRONTEND_HOST", "0.0.0.0"),
+        frontend_port=int(os.getenv("FRONTEND_PORT", os.getenv("PORT", "7860"))),
+        frontend_title=os.getenv("FRONTEND_TITLE", "Agentic RAG Chat"),
+        frontend_default_top_k=int(os.getenv("FRONTEND_DEFAULT_TOP_K", "4")),
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )
 
