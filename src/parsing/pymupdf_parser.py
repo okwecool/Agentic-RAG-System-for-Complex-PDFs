@@ -112,6 +112,12 @@ class PyMuPdfParser:
                     text=text,
                     bbox=tuple(float(value) for value in bbox) if bbox else None,
                     page_no=page_no,
+                    content_role=self._infer_content_role(text=text, block_type=self._infer_block_type(
+                        text=text,
+                        line_count=line_count,
+                        max_size=max_size,
+                        bold_ratio=bold_ratio,
+                    )),
                     source_span={
                         "page_no": page_no,
                         "block_index": block_index,
@@ -122,6 +128,22 @@ class PyMuPdfParser:
                 )
             )
         return blocks
+
+    @staticmethod
+    def _infer_content_role(text: str, block_type: str) -> str:
+        stripped = text.strip()
+        lowered = stripped.lower()
+        if block_type == "list_item":
+            return "list_item"
+        if block_type == "heading":
+            if lowered.startswith(("图表", "图", "figure")):
+                return "figure_caption"
+            if lowered.startswith(("表", "table")):
+                return "table_caption"
+            return "heading"
+        if block_type == "table":
+            return "table"
+        return "narrative_paragraph"
 
     @staticmethod
     def _infer_block_type(

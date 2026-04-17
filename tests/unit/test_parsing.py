@@ -31,6 +31,8 @@ class ParsingHelpersTest(unittest.TestCase):
 
         self.assertEqual(len(cleaned.pages[0].blocks), 1)
         self.assertEqual(cleaned.pages[0].blocks[0].text, "Hello world next line")
+        self.assertEqual(cleaned.pages[0].page_profile, "narrative")
+        self.assertEqual(cleaned.pages[0].blocks[0].content_role, "narrative_paragraph")
 
     def test_cleaner_joins_wrapped_paragraph_lines(self) -> None:
         document = Document(
@@ -369,6 +371,10 @@ class ParsingHelpersTest(unittest.TestCase):
         paragraph_count = sum(1 for block in cleaned.pages[0].blocks if block.type == "paragraph")
         self.assertLessEqual(heading_count, 1)
         self.assertGreaterEqual(paragraph_count, 3)
+        self.assertEqual(cleaned.pages[0].page_profile, "label_dense")
+        self.assertTrue(
+            all(block.content_role for block in cleaned.pages[0].blocks),
+        )
 
     def test_section_builder_ignores_date_and_source_headings(self) -> None:
         document = Document(

@@ -52,6 +52,11 @@ class IngestionPipeline:
                 document.metadata.setdefault("generic", {})
                 document.metadata["generic"]["file_hash"] = source_file.file_hash
                 document.metadata["generic"]["file_name"] = source_file.file_name
+                relative_source = source_file.file_path.relative_to(self.settings.source_pdf_dir)
+                document.metadata["generic"]["source_collection"] = (
+                    relative_source.parts[0] if len(relative_source.parts) > 1 else "default"
+                )
+                document.document_source_type = self._infer_document_source_type(document, relative_source)
                 document = self.cleaner.clean(document)
                 document = self.section_builder.apply(document)
                 document = self.table_extractor.extract(document)
@@ -107,12 +112,14 @@ class IngestionPipeline:
             "doc_id": document.doc_id,
             "title": document.title,
             "source_file": document.source_file,
+            "document_source_type": document.document_source_type,
             "chunk_count": len(document.chunks),
             "chunks": [
                 {
                     "chunk_id": chunk.chunk_id,
                     "page_no": chunk.page_no,
                     "chunk_type": chunk.chunk_type,
+                    "evidence_type": chunk.evidence_type,
                     "section_path": chunk.section_path,
                     "metadata": chunk.metadata,
                     "text": chunk.text,
@@ -124,6 +131,21 @@ class IngestionPipeline:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _infer_document_source_type(document: Document, relative_source) -> str:
+        joined = "/".join(relative_source.parts[:-1]).lower()
+        title = document.title.lower()
+        text = f"{joined} {title}"
+        if any(token in text for token in ("report", "research", "研报", "证券")):
+            return "research_report"
+        if any(token in text for token in ("announcement", "公告", "通告")):
+            return "company_announcement"
+        if any(token in text for token in ("presentation", "路演", "演示", "deck")):
+            return "presentation"
+        if any(token in text for token in ("manual", "指南", "手册")):
+            return "manual"
+        return "pdf_corpus"
 
     def _write_manifest(self, result: IngestionResult) -> None:
         output_path = self.settings.manifests_dir / "ingestion_summary.json"

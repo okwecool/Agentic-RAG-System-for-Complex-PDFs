@@ -161,10 +161,17 @@ class DocumentCleaner:
     def _normalize_page_blocks(self, page: Page, blocks: list[Block]) -> list[Block]:
         merged_blocks = self._merge_wrapped_blocks(blocks)
         label_dense = self._is_label_dense_page(merged_blocks)
+        page.page_profile = "label_dense" if label_dense else "narrative"
+        page.page_signals = {
+            "block_count": len(merged_blocks),
+            "heading_count": sum(1 for block in merged_blocks if block.type == "heading"),
+            "short_block_count": sum(1 for block in merged_blocks if len(block.text.strip()) <= 24),
+            "label_dense": label_dense,
+        }
         normalized: list[Block] = []
         for block in merged_blocks:
             source_span = dict(block.source_span or {})
-            source_span["page_profile"] = "label_dense" if label_dense else "default"
+            source_span["page_profile"] = page.page_profile
             normalized.append(
                 Block(
                     block_id=block.block_id,
@@ -175,10 +182,43 @@ class DocumentCleaner:
                     page_no=block.page_no,
                     table_html=block.table_html,
                     table_json=block.table_json,
+                    content_role=self._infer_content_role(block, page.page_profile, label_dense),
+                    role_confidence=self._infer_role_confidence(block, page.page_profile),
                     source_span=source_span,
                 )
             )
         return normalized
+
+    @staticmethod
+    def _infer_role_confidence(block: Block, page_profile: str) -> float:
+        if block.type == "table":
+            return 0.95
+        if block.type == "heading" and page_profile == "narrative":
+            return 0.85
+        if block.type == "paragraph":
+            return 0.8
+        return 0.7
+
+    def _infer_content_role(self, block: Block, page_profile: str, label_dense: bool) -> str:
+        text = block.text.strip()
+        lowered = text.lower()
+        if self._looks_like_source_note(text):
+            return "source_note"
+        if block.type == "table":
+            return "table"
+        if block.type == "list_item":
+            return "list_item"
+        if block.type == "heading":
+            if lowered.startswith(("图表", "图", "figure")):
+                return "figure_caption"
+            if lowered.startswith(("表", "table")):
+                return "table_caption"
+            return "heading"
+        if label_dense and len(text) <= 24:
+            return "chart_label"
+        if page_profile == "label_dense" and self._looks_like_chart_axis_label(text, 0, 1.0):
+            return "chart_label"
+        return "narrative_paragraph"
 
     def _is_visual_noise(self, block: Block, page: Page) -> bool:
         if not block.bbox:
@@ -277,6 +317,11 @@ class DocumentCleaner:
 
     def _should_merge(self, current: Block, nxt: Block) -> bool:
         if current.type == "table" or nxt.type == "table":
+            return False
+        if current.type == "heading" and nxt.type == "heading":
+            if len(current.text.strip()) <= 24 and len(nxt.text.strip()) <= 24:
+                return False
+        elif current.type == "heading" or nxt.type == "heading":
             return False
         if current.type == "list_item" or nxt.type == "list_item":
             return False
