@@ -19,9 +19,16 @@ def create_frontend_app(settings: Settings | None = None):
     resolved_settings = settings or get_settings()
     controller = FrontendController(create_qa_client(resolved_settings))
 
+    mode_choices = [
+        ("标准问答", "standard"),
+        ("Agentic 问答", "agentic"),
+    ]
+
     with gr.Blocks(title=resolved_settings.frontend_title) as app:
         gr.Markdown(f"# {resolved_settings.frontend_title}")
-        gr.Markdown("轻量本地问答前端，当前支持单轮提问、回答展示与基础引用溯源。")
+        gr.Markdown(
+            "本地轻量问答前端，支持标准问答与 agentic 工作流，并展示基础引用溯源。"
+        )
 
         session_state = gr.State(create_session_state())
 
@@ -37,6 +44,11 @@ def create_frontend_app(settings: Settings | None = None):
                     submit_button = gr.Button("发送", variant="primary")
                     clear_button = gr.Button("清空对话")
             with gr.Column(scale=2):
+                qa_mode = gr.Radio(
+                    choices=mode_choices,
+                    value=resolved_settings.frontend_default_mode,
+                    label="问答模式",
+                )
                 top_k = gr.Slider(
                     minimum=1,
                     maximum=10,
@@ -46,20 +58,29 @@ def create_frontend_app(settings: Settings | None = None):
                 )
                 tables_only = gr.Checkbox(label="仅检索表格", value=False)
                 status_md = gr.Markdown(controller.initial_status_markdown())
+                trace_md = gr.Markdown(controller.initial_trace_markdown())
                 citations_md = gr.Markdown(controller.initial_citations_markdown())
                 evidence_md = gr.Markdown(controller.initial_evidence_markdown())
 
         submit_args = {
             "fn": controller.handle_question,
-            "inputs": [query_box, chatbot, session_state, top_k, tables_only],
-            "outputs": [query_box, chatbot, session_state, citations_md, evidence_md, status_md],
+            "inputs": [query_box, chatbot, session_state, top_k, tables_only, qa_mode],
+            "outputs": [
+                query_box,
+                chatbot,
+                session_state,
+                citations_md,
+                evidence_md,
+                status_md,
+                trace_md,
+            ],
         }
         submit_button.click(**submit_args)
         query_box.submit(**submit_args)
 
         clear_button.click(
             fn=controller.clear_session,
-            outputs=[chatbot, session_state, citations_md, evidence_md, status_md],
+            outputs=[chatbot, session_state, citations_md, evidence_md, status_md, trace_md],
         )
 
     return app

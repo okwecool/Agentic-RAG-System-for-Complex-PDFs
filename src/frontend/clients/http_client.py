@@ -1,4 +1,4 @@
-"""HTTP client for talking to the existing QA API."""
+"""HTTP client for talking to the existing QA APIs."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ class HttpQaClient:
         if not normalized.endswith("/qa"):
             normalized = f"{normalized}/qa"
         self._ask_url = f"{normalized}/ask"
+        self._ask_agentic_url = f"{normalized}/ask-agentic"
         self._timeout_seconds = timeout_seconds
 
     def ask(
@@ -20,15 +21,17 @@ class HttpQaClient:
         top_k: int | None = None,
         tables_only: bool = False,
         session_id: str | None = None,
+        qa_mode: str = "standard",
     ) -> dict:
         payload = {
             "query": query,
             "top_k": top_k,
             "tables_only": tables_only,
         }
+        url = self._ask_agentic_url if qa_mode == "agentic" else self._ask_url
         data = json.dumps(payload).encode("utf-8")
         req = request.Request(
-            self._ask_url,
+            url,
             data=data,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -41,4 +44,3 @@ class HttpQaClient:
             raise RuntimeError(f"QA API request failed with status {exc.code}: {detail}") from exc
         except error.URLError as exc:  # pragma: no cover - depends on runtime network
             raise RuntimeError(f"Unable to reach QA API: {exc.reason}") from exc
-

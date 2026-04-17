@@ -38,6 +38,7 @@ class Settings:
     frontend_port: int = 7860
     frontend_title: str = "Agentic RAG Chat"
     frontend_default_top_k: int = 4
+    frontend_default_mode: str = "standard"
     debug: bool = False
 
 
@@ -116,6 +117,7 @@ def get_settings() -> Settings:
         frontend_port=int(os.getenv("FRONTEND_PORT", os.getenv("PORT", "7860"))),
         frontend_title=os.getenv("FRONTEND_TITLE", "Agentic RAG Chat"),
         frontend_default_top_k=int(os.getenv("FRONTEND_DEFAULT_TOP_K", "4")),
+        frontend_default_mode=os.getenv("FRONTEND_DEFAULT_MODE", "standard"),
         debug=os.getenv("APP_DEBUG", "false").lower() == "true",
     )
 

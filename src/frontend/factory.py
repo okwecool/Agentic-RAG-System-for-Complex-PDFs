@@ -6,6 +6,7 @@ from src.config.settings import Settings
 from src.frontend.clients.base import QaClient
 from src.frontend.clients.http_client import HttpQaClient
 from src.frontend.clients.inprocess_client import InProcessQaClient
+from src.generation.agentic_qa_service import AgenticQaService
 from src.generation.qa_service import QaService
 
 
@@ -18,6 +19,8 @@ def create_qa_client(settings: Settings) -> QaClient:
             )
         return HttpQaClient(base_url=settings.frontend_api_base_url)
     if mode == "inprocess":
-        return InProcessQaClient(qa_service=QaService.from_settings(settings))
+        return InProcessQaClient(
+            qa_service=QaService.from_settings(settings),
+            agentic_qa_service=AgenticQaService.from_settings(settings),
+        )
     raise ValueError(f"Unsupported FRONTEND_BACKEND_MODE: {settings.frontend_backend_mode}")
-
