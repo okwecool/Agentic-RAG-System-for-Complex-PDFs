@@ -84,6 +84,40 @@ class IngestionPipelineTest(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
+    def test_chunker_joins_wrapped_blocks_without_artificial_blank_lines(self) -> None:
+        document = Document(
+            doc_id="doc_test",
+            title="Test",
+            source_file="test.pdf",
+            pages=[
+                Page(
+                    page_no=1,
+                    blocks=[
+                        Block(
+                            block_id="b1",
+                            type="paragraph",
+                            text="从对比测试结果来看，Sora 2 在人物走路场景中真实度提升，达",
+                            section_path=["Section"],
+                            page_no=1,
+                        ),
+                        Block(
+                            block_id="b2",
+                            type="paragraph",
+                            text="70%。",
+                            section_path=["Section"],
+                            page_no=1,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        chunks = SectionAwareChunker().chunk(document)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("达70%。", chunks[0].text)
+        self.assertNotIn("\n\n70%", chunks[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

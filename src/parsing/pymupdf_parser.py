@@ -8,6 +8,21 @@ from src.domain.models.document import Block, Document, Page
 from src.utils.ids import build_block_id
 
 
+STRUCTURED_HEADING_PATTERN = re.compile(
+    r"^("
+    r"\d{1,2}(?:\.\d+){0,3}(?:[.)．、]|\s+)"
+    r"|[IVXLC]+(?:[.)]|\s+)"
+    r"|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+(?:[、.)．]|\s+)"
+    r")\s*.+"
+)
+
+DATE_OR_PERIOD_PATTERN = re.compile(
+    r"(20\d{2}(?:[-/\u5e74]\d{1,2}(?:[-/\u6708]\d{1,2}\u65e5?)?)?|"
+    r"\d{4}[qehm]\d{1,2}|"
+    r"\d{4}[\u5e74]?\d{0,2}[\u6708]?\d{0,2}[\u65e5]?)"
+)
+
+
 class PyMuPdfParser:
     def __init__(self) -> None:
         self._fitz = self._load_fitz()
@@ -82,6 +97,7 @@ class PyMuPdfParser:
             if not text:
                 continue
 
+            bold_ratio = bold_spans / max(1, span_count)
             block_index += 1
             bbox = raw_block.get("bbox")
             blocks.append(
@@ -91,7 +107,7 @@ class PyMuPdfParser:
                         text=text,
                         line_count=line_count,
                         max_size=max_size,
-                        bold_ratio=(bold_spans / max(1, span_count)),
+                        bold_ratio=bold_ratio,
                     ),
                     text=text,
                     bbox=tuple(float(value) for value in bbox) if bbox else None,
@@ -101,7 +117,7 @@ class PyMuPdfParser:
                         "block_index": block_index,
                         "line_count": line_count,
                         "max_size": max_size,
-                        "bold_ratio": round(bold_spans / max(1, span_count), 4),
+                        "bold_ratio": round(bold_ratio, 4),
                     },
                 )
             )
@@ -134,28 +150,12 @@ class PyMuPdfParser:
 
     @staticmethod
     def _looks_like_structured_heading(text: str) -> bool:
-        return bool(
-            re.match(
-                r"^("
-                r"\d{1,2}(?:\.\d+){0,3}"
-                r"|[IVXLC]+[.)]?"
-                r"|[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+[、.)．]?"
-                r")\s*.+",
-                text,
-            )
-        )
+        return bool(STRUCTURED_HEADING_PATTERN.match(text))
 
     @staticmethod
     def _looks_like_date_or_period_label(text: str) -> bool:
         normalized = re.sub(r"\s+", "", text.lower())
-        return bool(
-            re.fullmatch(
-                r"(20\d{2}(?:[-/年]\d{1,2}(?:[-/月]\d{1,2}日?)?)?|"
-                r"\d{4}[qehm]\d{1,2}|"
-                r"\d{4}[年]?\d{0,2}[月]?\d{0,2}[日]?)",
-                normalized,
-            )
-        )
+        return bool(DATE_OR_PERIOD_PATTERN.fullmatch(normalized))
 
     @staticmethod
     def _looks_like_page_or_source_note(text: str) -> bool:
@@ -176,6 +176,6 @@ class PyMuPdfParser:
         numeric_like = sum(
             1
             for char in meaningful
-            if char.isdigit() or char in {"%", ".", "-", "/", "+", "E"}
+            if char.isdigit() or char in {"%", ".", "-", "/", "+", "E", ","}
         )
         return numeric_like / len(meaningful) >= 0.45

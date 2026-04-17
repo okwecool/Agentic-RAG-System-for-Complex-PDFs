@@ -6,6 +6,7 @@
 - API 与召回开发说明：[`../development/api_retrieval_development_notes.md`](../development/api_retrieval_development_notes.md)
 - Chunk 异常巡检报告：[`chunk_anomaly_report.md`](chunk_anomaly_report.md)
 - 项目整体待优化文档：[`project_optimization_backlog.md`](project_optimization_backlog.md)
+- 页面模板分类与图表页分区设计：[`page_template_classification_design.md`](page_template_classification_design.md)
 
 ## 1. 当前实现到了什么程度
 
@@ -124,6 +125,27 @@
 ## 3. 当前最值得优先优化的方向
 
 结合当前工程状态和问题暴露情况，最值得优先投入的方向如下。
+
+### 3.0 先补页面结构理解层
+
+在最近几轮异常文档排查后，可以确认当前很多问题并不是单纯的检索或生成问题，而是页面结构信号缺失导致的上游证据质量问题。
+
+当前最值得先做的是：
+
+- `page template classification`
+- `block zoning`
+- `block role`
+
+这三者的价值在于：
+
+- 改善 `section_path` 稳定性
+- 减少图表页碎片化
+- 让 chunk 更接近可作答证据
+- 给 retrieval / rerank 提供更稳定的结构特征
+
+对应设计建议可参考：
+
+- [`page_template_classification_design.md`](page_template_classification_design.md)
 
 ### 3.1 让 reranker 真正进入默认检索闭环
 
@@ -267,17 +289,22 @@ parent-child 设计能让系统：
 
 如果从当前状态继续推进到一个更可靠的最小化 RAG MVP，推荐顺序如下：
 
-1. 对比实验并启用 reranker
+1. 先补页面结构理解层
+- 页面分类
+- 区域标注
+- block role
+
+2. 对比实验并启用 reranker
 - `noop` vs `local_transformers`
 - 不同 fusion 参数组合
 
-2. 做 parent-child chunking 设计与第一版实现
+3. 做 parent-child chunking 设计与第一版实现
 
-3. 做表格 / 图表半结构化抽取
+4. 做表格 / 图表半结构化抽取
 
-4. 建立小规模评测集
+5. 建立小规模评测集
 
-5. 强化 citation 对齐
+6. 强化 citation 对齐
 
 这个顺序的优点是：
 
