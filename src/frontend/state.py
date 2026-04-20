@@ -8,6 +8,7 @@ def create_session_state() -> dict:
         "session_id": None,
         "messages": [],
         "last_result": None,
+        "last_mode": "standard",
     }
 
 
@@ -21,6 +22,8 @@ def append_user_message(state: dict, content: str) -> dict:
 
 
 def append_assistant_message(state: dict, result: dict) -> dict:
+    if result.get("session_id"):
+        state["session_id"] = result["session_id"]
     state.setdefault("messages", []).append(
         {
             "role": "assistant",
@@ -32,6 +35,9 @@ def append_assistant_message(state: dict, result: dict) -> dict:
                 "prompt_family": result.get("prompt_family"),
                 "embedding_backend": result.get("embedding_backend"),
                 "retrieved_count": result.get("retrieved_count"),
+                "workflow_status": result.get("workflow_status"),
+                "route_type": result.get("route_type"),
+                "turn_index": result.get("turn_index"),
             },
         }
     )

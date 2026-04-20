@@ -7,6 +7,7 @@ from src.generation.citation_auditor import CitationAuditor
 from src.generation.prompts.qwen import QwenPromptTemplate
 from src.graph import route_rules
 from src.graph.nodes.citation_auditor import CitationAuditorNode
+from src.graph.nodes.conversation_resolver import ConversationResolverNode
 from src.graph.nodes.query_planner import QueryPlannerNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
 from src.graph.nodes.synthesizer import SynthesizerNode
@@ -18,8 +19,20 @@ class RouterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.router = Router()
 
-    def test_router_routes_to_planner_when_plan_missing(self) -> None:
+    def test_router_routes_to_conversation_resolver_when_query_not_resolved(self) -> None:
         decision = self.router.decide({"user_query": "Sora 2 有什么升级？"})
+
+        self.assertEqual(decision["next_node"], "conversation_resolver")
+        self.assertEqual(decision["reason"], "missing_conversation_resolution")
+        self.assertTrue(decision["should_continue"])
+
+    def test_router_routes_to_planner_when_plan_missing(self) -> None:
+        decision = self.router.decide(
+            {
+                "user_query": "Sora 2 有什么升级？",
+                "resolved_user_query": "Sora 2 有什么升级？",
+            }
+        )
 
         self.assertEqual(decision["next_node"], "query_planner")
         self.assertEqual(decision["reason"], "missing_plan")
@@ -29,6 +42,7 @@ class RouterTests(unittest.TestCase):
         decision = self.router.decide(
             {
                 "user_query": "关于比亚迪有哪些商业信息？",
+                "resolved_user_query": "关于比亚迪有哪些商业信息？",
                 "request_options": {"top_k": 6, "tables_only": False},
             }
         )
@@ -40,6 +54,7 @@ class RouterTests(unittest.TestCase):
         decision = self.router.decide(
             {
                 "user_query": "Sora 2 有什么升级？",
+                "resolved_user_query": "Sora 2 有什么升级？",
                 "current_intent": "qa",
                 "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
             }
@@ -51,6 +66,7 @@ class RouterTests(unittest.TestCase):
     def test_router_routes_to_synthesizer_when_evidence_ready(self) -> None:
         decision = self.router.decide(
             {
+                "resolved_user_query": "Sora 2 有什么升级？",
                 "current_intent": "qa",
                 "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
@@ -67,6 +83,7 @@ class RouterTests(unittest.TestCase):
     def test_router_routes_to_audit_when_answer_exists(self) -> None:
         decision = self.router.decide(
             {
+                "resolved_user_query": "测试问题",
                 "current_intent": "qa",
                 "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
@@ -82,6 +99,7 @@ class RouterTests(unittest.TestCase):
     def test_router_finishes_when_citation_map_exists(self) -> None:
         decision = self.router.decide(
             {
+                "resolved_user_query": "测试问题",
                 "current_intent": "qa",
                 "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
                 "retrieved_candidates": [{"chunk_id": "c1"}],
@@ -120,7 +138,26 @@ class QueryWorkflowTests(unittest.TestCase):
         self.assertIn("citation_map", state)
         self.assertIn("route_trace", state)
         self.assertGreaterEqual(len(state["route_trace"]), 1)
-        self.assertEqual("query_planner", state["route_trace"][0]["next_node"])
+        self.assertEqual("conversation_resolver", state["route_trace"][0]["next_node"])
+
+
+class ConversationResolverNodeTests(unittest.TestCase):
+    def test_conversation_resolver_uses_previous_entity_for_follow_up_question(self) -> None:
+        node = ConversationResolverNode()
+
+        state = node.run(
+            {
+                "user_query": "那它今年呢？",
+                "messages": [
+                    {"role": "user", "content": "英伟达近期发展势头如何？"},
+                    {"role": "assistant", "content": "英伟达近期发展势头强劲。"},
+                ],
+                "current_entities": {"last_entity": "英伟达"},
+            }
+        )
+
+        self.assertEqual("英伟达今年呢？", state["resolved_user_query"])
+        self.assertEqual("query_planner", state["next_action"])
 
 
 class QueryPlannerNodeTests(unittest.TestCase):

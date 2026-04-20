@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class Router:
     def decide(self, state: ResearchState) -> RouteDecision:
         debug_signals = {
+            "has_resolved_query": route_rules.has_resolved_query(state),
             "has_plan": route_rules.has_plan(state),
             "has_candidates": route_rules.has_candidates(state),
             "has_selected_evidence": route_rules.has_selected_evidence(state),
@@ -24,6 +25,23 @@ class Router:
             "max_retry_count": route_rules.get_max_retry_count(state),
             "selected_evidence_types": list(state.get("selected_evidence_types", [])),
         }
+
+        if not route_rules.has_resolved_query(state):
+            decision = {
+                "next_node": "conversation_resolver",
+                "reason": "missing_conversation_resolution",
+                "route_type": "resolve_then_plan",
+                "should_continue": True,
+                "debug_signals": debug_signals,
+            }
+            logger.info(
+                "router.decide next_node=%s reason=%s route_type=%s signals=%s",
+                decision["next_node"],
+                decision["reason"],
+                decision["route_type"],
+                debug_signals,
+            )
+            return decision
 
         if not route_rules.has_plan(state):
             decision = {

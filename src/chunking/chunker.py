@@ -129,8 +129,13 @@ class SectionAwareChunker:
             page_no=blocks[1].page_no,
             table_html=blocks[1].table_html,
             table_json=blocks[1].table_json,
+            content_role=blocks[1].content_role or "narrative_paragraph",
             source_span={
                 "merged_block_ids": [blocks[0].block_id, blocks[1].block_id],
+                "merged_content_roles": [
+                    blocks[0].content_role or blocks[0].type,
+                    blocks[1].content_role or blocks[1].type,
+                ],
                 "page_no": blocks[1].page_no,
             },
         )
@@ -142,6 +147,7 @@ class SectionAwareChunker:
         block: Block,
         chunk_index: int,
     ) -> Chunk:
+        evidence_type = self._infer_evidence_type([block], document)
         return Chunk(
             chunk_id=build_chunk_id(document.doc_id, block.page_no or 1, chunk_index),
             doc_id=document.doc_id,
@@ -149,11 +155,16 @@ class SectionAwareChunker:
             page_no=block.page_no or 1,
             chunk_type=block.type,
             section_path=block.section_path.copy(),
+            evidence_type=evidence_type,
             metadata={
                 "block_ids": [block.block_id],
                 "page_no": block.page_no or 1,
                 "section_path": block.section_path.copy(),
                 "source_block_count": 1,
+                "source_roles": [block.content_role or block.type],
+                "source_page_profile": (block.source_span or {}).get("page_profile"),
+                "document_source_type": document.document_source_type,
+                "evidence_type": evidence_type,
             },
         )
 
@@ -167,6 +178,9 @@ class SectionAwareChunker:
         section_path = blocks[0].section_path.copy()
         chunk_type = "mixed" if len({block.type for block in blocks}) > 1 else blocks[0].type
         text = self._compose_chunk_text(blocks)
+        evidence_type = self._infer_evidence_type(blocks, document)
+        source_roles = self._collect_source_roles(blocks)
+        source_page_profile = self._resolve_source_page_profile(blocks)
         return Chunk(
             chunk_id=build_chunk_id(document.doc_id, page_no, chunk_index),
             doc_id=document.doc_id,
@@ -174,12 +188,17 @@ class SectionAwareChunker:
             page_no=page_no,
             chunk_type=chunk_type,
             section_path=section_path,
+            evidence_type=evidence_type,
             metadata={
                 "block_ids": [block.block_id for block in blocks],
                 "page_no": page_no,
                 "section_path": section_path,
                 "source_block_count": len(blocks),
                 "char_count": len(text),
+                "source_roles": source_roles,
+                "source_page_profile": source_page_profile,
+                "document_source_type": document.document_source_type,
+                "evidence_type": evidence_type,
             },
         )
 
@@ -239,3 +258,41 @@ class SectionAwareChunker:
             if current_length >= self.config.overlap:
                 break
         return collected
+
+    @staticmethod
+    def _collect_source_roles(blocks: list[Block]) -> list[str]:
+        roles: list[str] = []
+        for block in blocks:
+            merged_roles = (block.source_span or {}).get("merged_content_roles", [])
+            if merged_roles:
+                roles.extend(str(role) for role in merged_roles if role)
+            else:
+                roles.append(block.content_role or block.type)
+        return sorted(dict.fromkeys(roles))
+
+    @staticmethod
+    def _resolve_source_page_profile(blocks: list[Block]) -> str | None:
+        for block in blocks:
+            page_profile = (block.source_span or {}).get("page_profile")
+            if page_profile:
+                return str(page_profile)
+        return None
+
+    def _infer_evidence_type(self, blocks: list[Block], document: Document) -> str:
+        roles = self._collect_source_roles(blocks)
+        page_profile = self._resolve_source_page_profile(blocks)
+        if "table" in roles:
+            return "table_evidence"
+        if any(role in {"figure_caption", "table_caption"} for role in roles):
+            return "caption_evidence"
+        if page_profile == "label_dense" and all(
+            role in {"chart_label", "heading", "figure_caption"} for role in roles
+        ):
+            return "chart_evidence"
+        if all(role in {"heading", "source_note"} for role in roles):
+            return "navigational_evidence"
+        if "source_note" in roles:
+            return "low_value_evidence"
+        if document.document_source_type == "table_corpus":
+            return "table_evidence"
+        return "narrative_evidence"

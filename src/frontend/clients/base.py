@@ -12,5 +12,5 @@ class QaClient(Protocol):
         top_k: int | None = None,
         tables_only: bool = False,
         session_id: str | None = None,
+        qa_mode: str = "standard",
     ) -> dict: ...
-

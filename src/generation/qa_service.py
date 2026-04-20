@@ -43,7 +43,13 @@ class QaService:
             top_k=settings.qa_top_k,
         )
 
-    def answer(self, query: str, top_k: int | None = None, tables_only: bool = False) -> dict:
+    def answer(
+        self,
+        query: str,
+        top_k: int | None = None,
+        tables_only: bool = False,
+        session_id: str | None = None,
+    ) -> dict:
         resolved_top_k = top_k or self.top_k
         logger.info(
             "qa.start query=%r top_k=%s tables_only=%s",
