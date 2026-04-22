@@ -159,6 +159,23 @@ class ConversationResolverNodeTests(unittest.TestCase):
         self.assertEqual("英伟达今年呢？", state["resolved_user_query"])
         self.assertEqual("query_planner", state["next_action"])
 
+    def test_conversation_resolver_handles_company_follow_up_reference(self) -> None:
+        node = ConversationResolverNode()
+
+        state = node.run(
+            {
+                "user_query": "这家公司最近怎么样？",
+                "messages": [
+                    {"role": "user", "content": "请总结一下比亚迪的商业信息"},
+                    {"role": "assistant", "content": "比亚迪近期在海外市场扩张明显。"},
+                ],
+                "current_entities": {"last_entity": "比亚迪"},
+            }
+        )
+
+        self.assertEqual("比亚迪最近怎么样？", state["resolved_user_query"])
+        self.assertEqual("query_planner", state["next_action"])
+
 
 class QueryPlannerNodeTests(unittest.TestCase):
     def test_query_planner_builds_normalized_query_and_plan(self) -> None:
@@ -257,6 +274,12 @@ class _FakeLlmProvider:
 
 
 class RetrievalStrategistNodeTests(unittest.TestCase):
+    def test_retrieval_strategist_strict_mode_fails_without_service(self) -> None:
+        node = RetrievalStrategistNode(strict=True)
+
+        with self.assertRaises(RuntimeError):
+            node.run({"user_query": "Sora 2 有什么升级？"})
+
     def test_retrieval_strategist_uses_search_service_for_chunks(self) -> None:
         node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
 
@@ -294,6 +317,12 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
 
 
 class GenerationNodeTests(unittest.TestCase):
+    def test_synthesizer_node_strict_mode_fails_without_generator(self) -> None:
+        node = SynthesizerNode(strict=True)
+
+        with self.assertRaises(RuntimeError):
+            node.run({"user_query": "Sora 2 有什么升级？"})
+
     def test_synthesizer_node_uses_answer_generator(self) -> None:
         node = SynthesizerNode(
             answer_generator=AnswerGenerator(_FakeLlmProvider(), QwenPromptTemplate()),
@@ -331,6 +360,12 @@ class GenerationNodeTests(unittest.TestCase):
 
         self.assertEqual(len(state["citation_map"]), 1)
         self.assertEqual(state["confidence"], "medium")
+
+    def test_citation_auditor_node_strict_mode_fails_without_auditor(self) -> None:
+        node = CitationAuditorNode(strict=True)
+
+        with self.assertRaises(RuntimeError):
+            node.run({"claims": [], "selected_evidence": []})
 
 
 if __name__ == "__main__":

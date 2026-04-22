@@ -11,6 +11,62 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationResolverNode:
+    _CONTEXTUAL_MARKERS = (
+        "那它",
+        "那他",
+        "那她",
+        "那么它",
+        "那么他",
+        "那么她",
+        "这个",
+        "这家",
+        "这家公司",
+        "该公司",
+        "它",
+        "他",
+        "她",
+        "其",
+        "今年",
+        "近期",
+        "最近",
+    )
+
+    _LEADING_TOKENS = (
+        "那么它",
+        "那么他",
+        "那么她",
+        "那它",
+        "那他",
+        "那她",
+        "那么",
+        "那",
+        "它",
+        "他",
+        "她",
+        "其",
+        "这家公司",
+        "该公司",
+        "这家",
+        "这个",
+    )
+
+    _STOPWORDS = {
+        "近期",
+        "最近",
+        "发展",
+        "势头",
+        "如何",
+        "今年",
+        "哪些",
+        "商业信息",
+        "问题",
+        "提问",
+        "总结",
+        "公司",
+        "行业",
+        "测试问题",
+    }
+
     def run(self, state: ResearchState) -> ResearchState:
         raw_query = (state.get("user_query") or "").strip()
         messages = list(state.get("messages", []))
@@ -36,46 +92,15 @@ class ConversationResolverNode:
         )
         return state
 
-    @staticmethod
-    def _needs_resolution(query: str) -> bool:
-        contextual_markers = (
-            "那",
-            "那么",
-            "它",
-            "他",
-            "她",
-            "这家",
-            "该公司",
-            "这家公司",
-            "其",
-            "今年",
-            "近期",
-            "最近",
-        )
-        if any(marker in query for marker in contextual_markers):
+    @classmethod
+    def _needs_resolution(cls, query: str) -> bool:
+        if any(marker in query for marker in cls._CONTEXTUAL_MARKERS):
             return True
-        return not bool(ConversationResolverNode._extract_entities(query))
+        return not bool(cls._extract_entities(query))
 
-    @staticmethod
-    def _inject_anchor_entity(query: str, anchor_entity: str) -> str:
-        leading_tokens = (
-            "那么它",
-            "那么他",
-            "那么她",
-            "那它",
-            "那他",
-            "那她",
-            "那么",
-            "那",
-            "它",
-            "他",
-            "她",
-            "其",
-            "这家公司",
-            "该公司",
-            "这家",
-        )
-        for token in leading_tokens:
+    @classmethod
+    def _inject_anchor_entity(cls, query: str, anchor_entity: str) -> str:
+        for token in cls._LEADING_TOKENS:
             if query.startswith(token):
                 return f"{anchor_entity}{query[len(token):]}"
         return f"{anchor_entity}{query}"
@@ -110,27 +135,11 @@ class ConversationResolverNode:
             seen.add(token)
         return deduped
 
-    @staticmethod
-    def _looks_like_entity(token: str) -> bool:
-        stopwords = {
-            "近期",
-            "最近",
-            "发展",
-            "势头",
-            "如何",
-            "今年",
-            "哪些",
-            "商业信息",
-            "问题",
-            "提问",
-            "总结",
-            "公司",
-            "行业",
-            "测试问题",
-        }
+    @classmethod
+    def _looks_like_entity(cls, token: str) -> bool:
         if not token:
             return False
-        if token in stopwords:
+        if token in cls._STOPWORDS:
             return False
         if token.isdigit():
             return False
@@ -144,7 +153,7 @@ class ConversationResolverNode:
     def _trim_entity_candidate(token: str) -> str:
         token = re.sub(r"^(关于|请问|那么|那|这个|这家|该)", "", token)
         token = re.sub(
-            r"(近期|最近|今年|有哪些|有什么|怎么样|如何|发展势头|商业信息|情况|表现|呢|吗).*$",
+            r"(近期|最近|今年|有哪些|有什么|怎么样|如何|发展势头|商业信息|情况|表现|吗|呢).*$",
             "",
             token,
         )

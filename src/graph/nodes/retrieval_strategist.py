@@ -17,9 +17,11 @@ class RetrievalStrategistNode:
         self,
         search_service: SearchService | None = None,
         default_top_k: int = 6,
+        strict: bool = False,
     ) -> None:
         self.search_service = search_service
         self.default_top_k = default_top_k
+        self.strict = strict
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RetrievalStrategistNode":
@@ -43,7 +45,7 @@ class RetrievalStrategistNode:
                 fusion=fusion,
                 reranker=reranker,
             )
-        return cls(search_service=search_service, default_top_k=settings.qa_top_k)
+        return cls(search_service=search_service, default_top_k=settings.qa_top_k, strict=True)
 
     def run(self, state: ResearchState) -> ResearchState:
         if self.search_service is not None:
@@ -96,6 +98,9 @@ class RetrievalStrategistNode:
                     state["embedding_backend"],
                 )
                 return state
+
+        if self.strict:
+            raise RuntimeError("RetrievalStrategistNode requires a SearchService in strict mode.")
 
         if not state.get("retrieved_candidates"):
             state["retrieved_candidates"] = [

@@ -11,15 +11,18 @@ logger = logging.getLogger(__name__)
 
 
 class CitationAuditorNode:
-    def __init__(self, citation_auditor: CitationAuditor | None = None) -> None:
+    def __init__(self, citation_auditor: CitationAuditor | None = None, strict: bool = False) -> None:
         self.citation_auditor = citation_auditor
+        self.strict = strict
 
     @classmethod
     def from_settings(cls) -> "CitationAuditorNode":
-        return cls(citation_auditor=CitationAuditor())
+        return cls(citation_auditor=CitationAuditor(), strict=True)
 
     def run(self, state: ResearchState) -> ResearchState:
         if self.citation_auditor is None:
+            if self.strict:
+                raise RuntimeError("CitationAuditorNode requires a CitationAuditor in strict mode.")
             state.setdefault(
                 "citation_map",
                 [{"claim": "placeholder claim", "chunk_ids": ["placeholder_chunk"]}],

@@ -20,10 +20,12 @@ class SynthesizerNode:
         answer_generator: AnswerGenerator | None = None,
         context_packer: ContextPacker | None = None,
         default_top_k: int = 6,
+        strict: bool = False,
     ) -> None:
         self.answer_generator = answer_generator
         self.context_packer = context_packer or ContextPacker()
         self.default_top_k = default_top_k
+        self.strict = strict
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "SynthesizerNode":
@@ -36,10 +38,13 @@ class SynthesizerNode:
             ),
             context_packer=ContextPacker(),
             default_top_k=settings.qa_top_k,
+            strict=True,
         )
 
     def run(self, state: ResearchState) -> ResearchState:
         if self.answer_generator is None:
+            if self.strict:
+                raise RuntimeError("SynthesizerNode requires an AnswerGenerator in strict mode.")
             state.setdefault("draft_answer", "placeholder draft answer")
             state.setdefault(
                 "claims",
