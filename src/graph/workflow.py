@@ -169,6 +169,7 @@ class QueryWorkflow:
     @staticmethod
     def _summarize_retrieval(state: ResearchState) -> dict:
         return {
+            "retrieval_query": state.get("retrieval_query"),
             "retrieved_count": len(state.get("retrieved_candidates", [])),
             "selected_count": len(state.get("selected_evidence", [])),
             "selected_evidence_types": list(state.get("selected_evidence_types", [])),

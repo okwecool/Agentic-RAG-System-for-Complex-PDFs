@@ -16,11 +16,14 @@ class ResearchState(TypedDict, total=False):
     workflow_status: str
     current_domain: str
     current_entities: dict[str, Any]
+    current_topic: dict[str, Any]
+    conversation_constraints: dict[str, Any]
     current_time_range: dict[str, Any]
     current_intent: str
     current_sub_intents: list[str]
     request_options: dict[str, Any]
     retrieval_plan: dict[str, Any]
+    retrieval_query: str
     route_decision: RouteDecision
     route_trace: list[dict[str, Any]]
     retrieved_candidates: list[dict[str, Any]]

@@ -21,7 +21,6 @@ class RouterTests(unittest.TestCase):
 
     def test_router_routes_to_conversation_resolver_when_query_not_resolved(self) -> None:
         decision = self.router.decide({"user_query": "Sora 2 有什么升级？"})
-
         self.assertEqual(decision["next_node"], "conversation_resolver")
         self.assertEqual(decision["reason"], "missing_conversation_resolution")
         self.assertTrue(decision["should_continue"])
@@ -33,7 +32,6 @@ class RouterTests(unittest.TestCase):
                 "resolved_user_query": "Sora 2 有什么升级？",
             }
         )
-
         self.assertEqual(decision["next_node"], "query_planner")
         self.assertEqual(decision["reason"], "missing_plan")
         self.assertTrue(decision["should_continue"])
@@ -46,7 +44,6 @@ class RouterTests(unittest.TestCase):
                 "request_options": {"top_k": 6, "tables_only": False},
             }
         )
-
         self.assertEqual(decision["next_node"], "query_planner")
         self.assertEqual(decision["reason"], "missing_plan")
 
@@ -59,7 +56,6 @@ class RouterTests(unittest.TestCase):
                 "retrieval_plan": {"mode": "hybrid", "intent": "qa", "complexity": "low"},
             }
         )
-
         self.assertEqual(decision["next_node"], "retrieval_strategist")
         self.assertEqual(decision["reason"], "missing_candidates")
 
@@ -76,7 +72,6 @@ class RouterTests(unittest.TestCase):
                 "max_retry_count": 2,
             }
         )
-
         self.assertEqual(decision["next_node"], "synthesizer")
         self.assertEqual(decision["reason"], "ready_to_synthesize")
 
@@ -92,7 +87,6 @@ class RouterTests(unittest.TestCase):
                 "draft_answer": "测试答案",
             }
         )
-
         self.assertEqual(decision["next_node"], "citation_auditor")
         self.assertEqual(decision["reason"], "missing_citation_audit")
 
@@ -109,7 +103,6 @@ class RouterTests(unittest.TestCase):
                 "citation_map": [{"claim": "x"}],
             }
         )
-
         self.assertEqual(decision["next_node"], "finish")
         self.assertFalse(decision["should_continue"])
 
@@ -127,7 +120,6 @@ class RouteRulesTests(unittest.TestCase):
 class QueryWorkflowTests(unittest.TestCase):
     def test_workflow_runs_until_completed(self) -> None:
         workflow = QueryWorkflow()
-
         state = workflow.run({"user_query": "Sora 2 有什么升级？"})
 
         self.assertEqual(state["workflow_status"], "completed")
@@ -144,7 +136,6 @@ class QueryWorkflowTests(unittest.TestCase):
 class ConversationResolverNodeTests(unittest.TestCase):
     def test_conversation_resolver_uses_previous_entity_for_follow_up_question(self) -> None:
         node = ConversationResolverNode()
-
         state = node.run(
             {
                 "user_query": "那它今年呢？",
@@ -158,10 +149,11 @@ class ConversationResolverNodeTests(unittest.TestCase):
 
         self.assertEqual("英伟达今年呢？", state["resolved_user_query"])
         self.assertEqual("query_planner", state["next_action"])
+        self.assertTrue(state["conversation_constraints"]["follow_up"])
+        self.assertEqual("英伟达", state["conversation_constraints"]["anchor_entity"])
 
     def test_conversation_resolver_handles_company_follow_up_reference(self) -> None:
         node = ConversationResolverNode()
-
         state = node.run(
             {
                 "user_query": "这家公司最近怎么样？",
@@ -176,11 +168,58 @@ class ConversationResolverNodeTests(unittest.TestCase):
         self.assertEqual("比亚迪最近怎么样？", state["resolved_user_query"])
         self.assertEqual("query_planner", state["next_action"])
 
+    def test_conversation_resolver_extracts_recent_time_terms(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run(
+            {
+                "user_query": "那它今年呢？",
+                "messages": [
+                    {"role": "user", "content": "英伟达 2025Q4 财报怎么样？"},
+                    {"role": "assistant", "content": "2025Q4 表现强劲。"},
+                ],
+                "current_entities": {"last_entity": "英伟达"},
+            }
+        )
+
+        self.assertEqual(["2025Q4"], state["conversation_constraints"]["inherited_time_terms"])
+
+    def test_conversation_resolver_normalizes_product_subject_to_company_anchor(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run({"user_query": "苹果手机近期销量如何"})
+
+        self.assertEqual("苹果手机近期销量如何", state["resolved_user_query"])
+        self.assertEqual("苹果", state["current_entities"]["last_entity"])
+        self.assertEqual("iPhone", state["current_entities"]["last_product"])
+        self.assertEqual("苹果", state["conversation_constraints"]["anchor_entity"])
+        self.assertEqual("苹果", state["current_topic"]["entity"])
+        self.assertEqual("iPhone", state["current_topic"]["product"])
+
+    def test_conversation_resolver_uses_normalized_company_anchor_for_product_follow_up(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run(
+            {
+                "user_query": "那他的其他电子产品呢",
+                "messages": [
+                    {"role": "user", "content": "苹果手机近期销量如何"},
+                    {"role": "assistant", "content": "苹果手机近期销量表现强劲。"},
+                ],
+                "current_entities": {"last_entity": "苹果", "last_product": "iPhone"},
+                "current_topic": {
+                    "entity": "苹果",
+                    "product": "iPhone",
+                    "topic": "苹果手机",
+                },
+            }
+        )
+
+        self.assertEqual("苹果的其他电子产品呢", state["resolved_user_query"])
+        self.assertEqual("苹果", state["conversation_constraints"]["anchor_entity"])
+        self.assertTrue(state["conversation_constraints"]["follow_up"])
+
 
 class QueryPlannerNodeTests(unittest.TestCase):
     def test_query_planner_builds_normalized_query_and_plan(self) -> None:
         node = QueryPlannerNode()
-
         state = node.run({"user_query": "  Sora 2   有什么升级？  "})
 
         self.assertEqual(state["normalized_query"], "Sora 2 有什么升级?")
@@ -190,7 +229,6 @@ class QueryPlannerNodeTests(unittest.TestCase):
 
     def test_query_planner_marks_structured_query_preferences(self) -> None:
         node = QueryPlannerNode()
-
         state = node.run({"user_query": "比亚迪 图表 2025 年销量对比"})
 
         self.assertEqual(state["current_intent"], "compare")
@@ -201,7 +239,6 @@ class QueryPlannerNodeTests(unittest.TestCase):
 
     def test_query_planner_applies_request_options_over_defaults(self) -> None:
         node = QueryPlannerNode()
-
         state = node.run(
             {
                 "user_query": "关于比亚迪有哪些商业信息？",
@@ -212,13 +249,73 @@ class QueryPlannerNodeTests(unittest.TestCase):
         self.assertEqual(6, state["retrieval_plan"]["top_k"])
         self.assertFalse(state["retrieval_plan"]["tables_only"])
 
+    def test_query_planner_consumes_conversation_constraints(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "那今年呢？",
+                "resolved_user_query": "英伟达今年呢？",
+                "current_entities": {
+                    "conversation_anchor": "英伟达",
+                    "current_query_entities": [],
+                },
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "英伟达",
+                    "inherited_time_terms": ["2025Q4"],
+                },
+            }
+        )
+
+        self.assertIn("follow_up", state["current_sub_intents"])
+        self.assertIn("time_inherited", state["current_sub_intents"])
+        self.assertEqual(["2025Q4"], state["current_time_range"]["raw_terms"])
+        self.assertEqual(["英伟达"], state["retrieval_plan"]["entity_scope"])
+        self.assertEqual(
+            "英伟达",
+            state["retrieval_plan"]["carry_over_constraints"]["anchor_entity"],
+        )
+
+    def test_query_planner_preserves_topic_scope(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "苹果手机近期销量如何",
+                "current_entities": {
+                    "last_entity": "苹果",
+                    "last_product": "iPhone",
+                    "current_query_entities": ["苹果"],
+                },
+                "current_topic": {
+                    "entity": "苹果",
+                    "product": "iPhone",
+                    "topic": "苹果手机",
+                },
+                "conversation_constraints": {
+                    "anchor_entity": "苹果",
+                    "normalized_subject": {
+                        "entity": "苹果",
+                        "product": "iPhone",
+                        "topic": "苹果手机",
+                    },
+                },
+            }
+        )
+
+        self.assertEqual("苹果", state["retrieval_plan"]["entity_scope"][0])
+        self.assertEqual("iPhone", state["retrieval_plan"]["topic_scope"]["product"])
+
 
 class _FakeSearchService:
     embedding_backend = "fake-embedding"
 
+    def __init__(self) -> None:
+        self.last_query: str | None = None
+
     def search_chunks(self, query: str, top_k: int = 10) -> list[dict]:
         from src.domain.models.document import Chunk
 
+        self.last_query = query
         return [
             {
                 "chunk": Chunk(
@@ -249,6 +346,7 @@ class _FakeSearchService:
     def search_tables(self, query: str, top_k: int = 10) -> list[dict]:
         from src.domain.models.document import Chunk
 
+        self.last_query = query
         return [
             {
                 "chunk": Chunk(
@@ -276,13 +374,12 @@ class _FakeLlmProvider:
 class RetrievalStrategistNodeTests(unittest.TestCase):
     def test_retrieval_strategist_strict_mode_fails_without_service(self) -> None:
         node = RetrievalStrategistNode(strict=True)
-
         with self.assertRaises(RuntimeError):
             node.run({"user_query": "Sora 2 有什么升级？"})
 
     def test_retrieval_strategist_uses_search_service_for_chunks(self) -> None:
-        node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
-
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
         state = node.run(
             {
                 "user_query": "Sora 2 有什么升级？",
@@ -300,10 +397,11 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
             state["document_source_types"],
             ["research_report", "research_report"],
         )
+        self.assertEqual("Sora 2 有什么升级？", search_service.last_query)
 
     def test_retrieval_strategist_uses_search_service_for_tables(self) -> None:
-        node = RetrievalStrategistNode(search_service=_FakeSearchService(), default_top_k=2)
-
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
         state = node.run(
             {
                 "user_query": "比亚迪 销量",
@@ -314,12 +412,55 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
 
         self.assertEqual(len(state["retrieved_candidates"]), 1)
         self.assertEqual(state["candidate_evidence_types"], ["table_evidence"])
+        self.assertEqual("比亚迪 销量", search_service.last_query)
+
+    def test_retrieval_strategist_enriches_follow_up_query_with_plan_scope(self) -> None:
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "那今年呢？",
+                "normalized_query": "英伟达今年呢?",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "tables_only": False,
+                    "entity_scope": ["英伟达"],
+                    "time_terms": ["2025Q4"],
+                },
+            }
+        )
+
+        self.assertEqual("英伟达今年呢? 2025Q4", search_service.last_query)
+        self.assertEqual(search_service.last_query, state["retrieval_query"])
+
+    def test_retrieval_strategist_enriches_query_with_topic_scope(self) -> None:
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "那他的其他电子产品呢",
+                "normalized_query": "苹果的其他电子产品呢",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "tables_only": False,
+                    "entity_scope": ["苹果"],
+                    "topic_scope": {"product": "iPhone", "topic": "苹果手机"},
+                },
+            }
+        )
+
+        self.assertEqual(
+            "苹果的其他电子产品呢 iPhone 苹果手机",
+            search_service.last_query,
+        )
+        self.assertEqual(search_service.last_query, state["retrieval_query"])
 
 
 class GenerationNodeTests(unittest.TestCase):
     def test_synthesizer_node_strict_mode_fails_without_generator(self) -> None:
         node = SynthesizerNode(strict=True)
-
         with self.assertRaises(RuntimeError):
             node.run({"user_query": "Sora 2 有什么升级？"})
 
@@ -363,7 +504,6 @@ class GenerationNodeTests(unittest.TestCase):
 
     def test_citation_auditor_node_strict_mode_fails_without_auditor(self) -> None:
         node = CitationAuditorNode(strict=True)
-
         with self.assertRaises(RuntimeError):
             node.run({"claims": [], "selected_evidence": []})
 

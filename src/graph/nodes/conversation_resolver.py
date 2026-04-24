@@ -11,6 +11,17 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationResolverNode:
+    _SUBJECT_NORMALIZATION_RULES = (
+        (
+            ("苹果手机", "iPhone", "iphone", "苹果 iPhone"),
+            {
+                "entity": "苹果",
+                "product": "iPhone",
+                "topic": "苹果手机",
+            },
+        ),
+    )
+
     _CONTEXTUAL_MARKERS = (
         "那它",
         "那他",
@@ -71,15 +82,38 @@ class ConversationResolverNode:
         raw_query = (state.get("user_query") or "").strip()
         messages = list(state.get("messages", []))
         anchor_entity = self._resolve_anchor_entity(state, messages)
+        current_query_entities = self._extract_entities(raw_query)
+        normalized_subject = self._normalize_subject(raw_query)
+        if normalized_subject:
+            anchor_entity = normalized_subject["entity"]
+            current_query_entities = [normalized_subject["entity"]]
+        inherited_time_terms = self._extract_recent_time_terms(messages)
 
         resolved_query = raw_query
-        if raw_query and self._needs_resolution(raw_query) and anchor_entity:
+        if raw_query and not normalized_subject and self._needs_resolution(raw_query) and anchor_entity:
             resolved_query = self._inject_anchor_entity(raw_query, anchor_entity)
 
         current_entities = dict(state.get("current_entities", {}))
         current_entities["conversation_anchor"] = anchor_entity
-        current_entities["current_query_entities"] = self._extract_entities(raw_query)
+        current_entities["current_query_entities"] = current_query_entities
+        if normalized_subject:
+            current_entities["last_entity"] = normalized_subject["entity"]
+            current_entities["last_product"] = normalized_subject.get("product")
         state["current_entities"] = current_entities
+        if normalized_subject:
+            state["current_topic"] = {
+                "entity": normalized_subject["entity"],
+                "product": normalized_subject.get("product"),
+                "topic": normalized_subject.get("topic"),
+            }
+        state["conversation_constraints"] = {
+            "follow_up": bool(anchor_entity and self._needs_resolution(raw_query)),
+            "anchor_entity": anchor_entity,
+            "current_query_entities": list(current_query_entities),
+            "normalized_subject": dict(normalized_subject or {}),
+            "inherited_time_terms": inherited_time_terms,
+            "message_count": len(messages),
+        }
         state["resolved_user_query"] = resolved_query
         state["next_action"] = "query_planner"
 
@@ -135,6 +169,28 @@ class ConversationResolverNode:
             seen.add(token)
         return deduped
 
+    @staticmethod
+    def _extract_recent_time_terms(messages: list[dict]) -> list[str]:
+        terms: list[str] = []
+        seen: set[str] = set()
+        for item in reversed(messages[-6:]):
+            content = str(item.get("content", ""))
+            for term in re.findall(r"20\d{2}(?:Q[1-4]|q[1-4]|H[12]|h[12])?", content):
+                normalized = term.upper()
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                terms.append(normalized)
+        return terms
+
+    @classmethod
+    def _normalize_subject(cls, query: str) -> dict[str, str] | None:
+        lowered = query.lower()
+        for markers, normalized in cls._SUBJECT_NORMALIZATION_RULES:
+            if any(marker.lower() in lowered for marker in markers):
+                return dict(normalized)
+        return None
+
     @classmethod
     def _looks_like_entity(cls, token: str) -> bool:
         if not token:
@@ -153,7 +209,7 @@ class ConversationResolverNode:
     def _trim_entity_candidate(token: str) -> str:
         token = re.sub(r"^(关于|请问|那么|那|这个|这家|该)", "", token)
         token = re.sub(
-            r"(近期|最近|今年|有哪些|有什么|怎么样|如何|发展势头|商业信息|情况|表现|吗|呢).*$",
+            r"(近期|最近|今年|有哪些|有什么|怎么样|如何|发展势头|商业信息|情况|表现|吗).*$",
             "",
             token,
         )

@@ -49,17 +49,23 @@ class RetrievalStrategistNode:
 
     def run(self, state: ResearchState) -> ResearchState:
         if self.search_service is not None:
-            query = (state.get("normalized_query") or state.get("user_query") or "").strip()
             plan = state.get("retrieval_plan", {})
+            query = self._build_search_query(
+                state.get("normalized_query") or state.get("user_query") or "",
+                plan,
+            )
             top_k = int(plan.get("top_k", self.default_top_k))
             tables_only = bool(plan.get("tables_only", False))
+            state["retrieval_query"] = query
             logger.info(
-                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s",
+                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s entity_scope=%s time_terms=%s",
                 query,
                 top_k,
                 tables_only,
                 plan.get("intent"),
                 plan.get("prefers_structured_blocks"),
+                plan.get("entity_scope", []),
+                plan.get("time_terms", []),
             )
             if query:
                 results = (
@@ -135,6 +141,29 @@ class RetrievalStrategistNode:
             state["retry_count"],
         )
         return state
+
+    @staticmethod
+    def _build_search_query(base_query: str, plan: dict) -> str:
+        query = " ".join(str(base_query or "").strip().split())
+        enrichment_terms: list[str] = []
+        for term in plan.get("entity_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        topic_scope = plan.get("topic_scope", {}) or {}
+        if isinstance(topic_scope, dict):
+            for key in ("product", "topic"):
+                normalized = str(topic_scope.get(key, "")).strip()
+                if normalized and normalized not in query and normalized not in enrichment_terms:
+                    enrichment_terms.append(normalized)
+        for term in plan.get("time_terms", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+
+        if enrichment_terms:
+            query = " ".join([query, *enrichment_terms]).strip()
+        return query
 
     @staticmethod
     def _infer_evidence_type(item: dict) -> str:

@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from dataclasses import dataclass
 import logging
 
 from src.config.settings import Settings
-from src.domain.models.citation import Citation
 from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.factory import create_llm_provider
 from src.generation.prompts.factory import create_prompt_template
+from src.generation.response_builder import build_citations, serialize_citations, serialize_evidence_list
 from src.retrieval.context_packer import ContextPacker
 from src.retrieval.factory import create_hybrid_fusion, create_reranker
 from src.retrieval.search_service import SearchService
@@ -70,7 +69,7 @@ class QaService:
         )
         generation = self.answer_generator.generate(query=query, evidence=packed)
         audit = self.citation_auditor.audit(generation["claims"], packed)
-        citations = self._build_citations(audit.get("verified_claims", []), packed)
+        citations = build_citations(audit.get("verified_claims", []), packed)
         logger.info(
             "qa.finish confidence=%s citations=%s model=%s",
             audit.get("final_confidence", generation.get("confidence", "low")),
@@ -85,44 +84,8 @@ class QaService:
             "prompt_family": generation.get("prompt_family"),
             "embedding_backend": self.search_service.embedding_backend,
             "retrieved_count": len(retrieved),
-            "citations": [asdict(citation) for citation in citations],
-            "evidence": [self._serialize_evidence(item) for item in packed],
-        }
-
-    @staticmethod
-    def _build_citations(verified_claims: list[dict], evidence: list[dict]) -> list[Citation]:
-        evidence_by_id = {item["chunk"].chunk_id: item["chunk"] for item in evidence if "chunk" in item}
-        citations: list[Citation] = []
-        seen_chunk_ids: set[str] = set()
-        for claim in verified_claims:
-            for chunk_id in claim.get("chunk_ids", []):
-                if chunk_id in seen_chunk_ids or chunk_id not in evidence_by_id:
-                    continue
-                chunk = evidence_by_id[chunk_id]
-                citations.append(
-                    Citation(
-                        claim=claim["claim"],
-                        doc_id=chunk.doc_id,
-                        page_no=chunk.page_no,
-                        chunk_id=chunk.chunk_id,
-                        excerpt=chunk.text[:240],
-                    )
-                )
-                seen_chunk_ids.add(chunk_id)
-        return citations
-
-    @staticmethod
-    def _serialize_evidence(item: dict) -> dict:
-        chunk = item["chunk"]
-        return {
-            "chunk_id": chunk.chunk_id,
-            "doc_id": chunk.doc_id,
-            "page_no": chunk.page_no,
-            "chunk_type": chunk.chunk_type,
-            "section_path": chunk.section_path,
-            "score": float(item.get("score", 0.0)),
-            "sources": sorted(item.get("sources", [])),
-            "text": chunk.text,
+            "citations": serialize_citations(citations),
+            "evidence": serialize_evidence_list(packed),
         }
 
 
