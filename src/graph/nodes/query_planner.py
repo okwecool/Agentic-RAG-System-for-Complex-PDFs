@@ -51,6 +51,7 @@ class QueryPlannerNode:
             normalized_query,
             conversation_constraints,
             last_planner_context,
+            str(state.get("conversation_summary", "") or ""),
         )
         state["retrieval_plan"] = self._build_retrieval_plan(
             normalized_query=normalized_query,
@@ -58,6 +59,7 @@ class QueryPlannerNode:
             query_signature=query_signature,
             time_range=state["current_time_range"],
             request_options=request_options,
+            conversation_summary=str(state.get("conversation_summary", "") or ""),
             conversation_constraints=conversation_constraints,
             current_entities=effective_entities,
             current_topic=current_topic,
@@ -69,6 +71,8 @@ class QueryPlannerNode:
             "aspect_scope": planner_constraints["aspect_scope"],
             "comparison_target": planner_constraints["comparison_target"],
             "output_style": planner_constraints["output_style"],
+            "dialogue_referents": list(planner_constraints["dialogue_referents"]),
+            "summary_terms": list(planner_constraints["summary_terms"]),
             "entity_scope": list(state["retrieval_plan"].get("entity_scope", [])),
             "topic_scope": dict(state["retrieval_plan"].get("topic_scope", {})),
             "time_terms": list(state["retrieval_plan"].get("time_terms", [])),
@@ -167,6 +171,7 @@ class QueryPlannerNode:
         query_signature,
         time_range: dict[str, object],
         request_options: dict[str, object],
+        conversation_summary: str,
         conversation_constraints: dict[str, object],
         current_entities: dict[str, object],
         current_topic: dict[str, object],
@@ -206,6 +211,9 @@ class QueryPlannerNode:
             "aspect_scope": list(planner_constraints.get("aspect_scope", [])),
             "comparison_target": planner_constraints.get("comparison_target"),
             "output_style": planner_constraints.get("output_style"),
+            "dialogue_referents": list(planner_constraints.get("dialogue_referents", [])),
+            "summary_terms": list(planner_constraints.get("summary_terms", [])),
+            "conversation_summary": str(conversation_summary or ""),
             "carry_over_constraints": {
                 "follow_up": bool(conversation_constraints.get("follow_up")),
                 "anchor_entity": conversation_constraints.get("anchor_entity"),
@@ -267,24 +275,50 @@ class QueryPlannerNode:
         normalized_query: str,
         conversation_constraints: dict[str, object],
         last_planner_context: dict[str, object],
+        conversation_summary: str,
     ) -> dict[str, object]:
         metric_scope = list(conversation_constraints.get("metric_hints", []))
         aspect_scope = list(conversation_constraints.get("aspect_hints", []))
         comparison_target = conversation_constraints.get("comparison_target")
         output_style_hints = list(conversation_constraints.get("output_style_hints", []))
+        referent_map = conversation_constraints.get("referent_map", {})
+        comparison_context = conversation_constraints.get("comparison_context", {})
+        summary_constraints = QueryPlannerNode._extract_summary_constraints(conversation_summary)
 
         follow_up = bool(conversation_constraints.get("follow_up"))
         if follow_up and not metric_scope:
             metric_scope = list(last_planner_context.get("metric_scope", []))
+        if follow_up and not metric_scope:
+            metric_scope = list(summary_constraints["metric_scope"])
         if follow_up and not aspect_scope:
             aspect_scope = list(last_planner_context.get("aspect_scope", []))
+        if follow_up and not aspect_scope:
+            aspect_scope = list(summary_constraints["aspect_scope"])
         if follow_up and not comparison_target:
             comparison_target = last_planner_context.get("comparison_target")
+        if follow_up and not comparison_target:
+            comparison_target = summary_constraints["comparison_target"]
 
         output_style = output_style_hints[0] if output_style_hints else None
         if follow_up and not output_style:
             inherited_output_style = str(last_planner_context.get("output_style", "")).strip()
             output_style = inherited_output_style or None
+        if follow_up and not output_style:
+            output_style = summary_constraints["output_style"]
+
+        dialogue_referents: list[str] = []
+        if isinstance(referent_map, dict):
+            referent_values = referent_map.get("前两个")
+            if isinstance(referent_values, list):
+                dialogue_referents = [str(item) for item in referent_values if str(item).strip()]
+        if not dialogue_referents and isinstance(comparison_context, dict):
+            active_entities = comparison_context.get("active_entities", [])
+            if isinstance(active_entities, list):
+                dialogue_referents = [str(item) for item in active_entities if str(item).strip()]
+        if follow_up and not dialogue_referents:
+            inherited_referents = last_planner_context.get("dialogue_referents", [])
+            if isinstance(inherited_referents, list):
+                dialogue_referents = [str(item) for item in inherited_referents if str(item).strip()]
 
         if "对比" in normalized_query or "比较" in normalized_query:
             aspect_scope = list(dict.fromkeys([*aspect_scope, "对比分析"]))
@@ -294,4 +328,38 @@ class QueryPlannerNode:
             "aspect_scope": aspect_scope,
             "comparison_target": comparison_target,
             "output_style": output_style,
+            "dialogue_referents": dialogue_referents,
+            "summary_terms": list(summary_constraints["summary_terms"]),
+        }
+
+    @staticmethod
+    def _extract_summary_constraints(conversation_summary: str) -> dict[str, object]:
+        summary = str(conversation_summary or "")
+        metric_scope: list[str] = []
+        aspect_scope: list[str] = []
+        summary_terms: list[str] = []
+        comparison_target: str | None = None
+        output_style: str | None = None
+
+        if "销量" in summary:
+            metric_scope.append("销量")
+            summary_terms.append("销量")
+        if "近期" in summary or "最近" in summary:
+            aspect_scope.append("近期表现")
+        for term in ("苹果手机", "iPhone", "苹果", "华为", "英伟达", "比亚迪"):
+            if term in summary and term not in summary_terms:
+                summary_terms.append(term)
+        if "对比" in summary or "比较" in summary:
+            aspect_scope = list(dict.fromkeys([*aspect_scope, "对比分析"]))
+        if "详细" in summary or "展开" in summary:
+            output_style = "detailed"
+        elif "列表" in summary or "列出" in summary:
+            output_style = "list"
+
+        return {
+            "metric_scope": metric_scope,
+            "aspect_scope": aspect_scope,
+            "comparison_target": comparison_target,
+            "output_style": output_style,
+            "summary_terms": summary_terms,
         }

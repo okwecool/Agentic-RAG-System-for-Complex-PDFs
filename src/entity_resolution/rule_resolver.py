@@ -10,7 +10,7 @@ from src.entity_resolution.types import EntityMention, EntityResolutionResult
 class RuleEntityResolver:
     _SUBJECT_NORMALIZATION_RULES = (
         (
-            ("苹果手机", "iphone", "iPhone", "苹果 iPhone"),
+            ("苹果手机", "iphone", "苹果 iphone"),
             {
                 "entity": "苹果",
                 "product": "iPhone",
@@ -34,6 +34,8 @@ class RuleEntityResolver:
         "公司",
         "行业",
         "测试问题",
+        "前两个手机厂商",
+        "手机厂商",
     }
 
     def resolve(
@@ -128,7 +130,16 @@ class RuleEntityResolver:
 
     @staticmethod
     def _trim_entity_candidate(token: str) -> str:
-        token = re.sub(r"^(关于|请问|那么|那|这个|这家|该)", "", token)
+        token = re.sub(
+            r"^(关于|请问|那么|那|这个|这家|该|相比之下|相比|比起|和)",
+            "",
+            token,
+        )
+        token = re.sub(
+            r"(的?(手机|电子产品|其他电子产品|销量|表现|情况|趋势|产品).*)$",
+            "",
+            token,
+        )
         token = re.sub(
             r"(近期|最近|今年|有哪些|有什么|怎么样|如何|发展势头|商业信息|情况|表现|呢).*$",
             "",

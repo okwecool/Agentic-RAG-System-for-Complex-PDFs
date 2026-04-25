@@ -75,9 +75,68 @@ class ConversationResolverNode:
     def __init__(self, entity_resolver: EntityResolver | None = None) -> None:
         self.entity_resolver = entity_resolver or RuleEntityResolver()
 
+    @staticmethod
+    def _merge_unique(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        merged: list[str] = []
+        for value in values:
+            item = str(value).strip()
+            if not item or item in seen:
+                continue
+            merged.append(item)
+            seen.add(item)
+        return merged
+
+    def _build_recent_entities(
+        self,
+        current_entities: dict[str, object],
+        anchor_entity: str | None,
+        current_query_entities: list[str],
+    ) -> list[str]:
+        prior_recent = current_entities.get("recent_entities", [])
+        values: list[str] = []
+        if isinstance(prior_recent, list):
+            values.extend(str(item) for item in prior_recent if str(item).strip())
+        prior_last = current_entities.get("last_entity")
+        if prior_last:
+            values.append(str(prior_last))
+        if anchor_entity:
+            values.append(anchor_entity)
+        values.extend(current_query_entities)
+        return self._merge_unique(values)[-5:]
+
+    @staticmethod
+    def _build_comparison_context(query: str, recent_entities: list[str]) -> dict[str, object]:
+        if not any(marker in query for marker in ("相比之下", "相比", "对比", "比较", "比起")):
+            return {}
+        if len(recent_entities) < 2:
+            return {}
+        return {
+            "mode": "compare",
+            "active_entities": recent_entities[-2:],
+        }
+
+    @staticmethod
+    def _build_referent_map(
+        query: str,
+        recent_entities: list[str],
+        comparison_context: dict[str, object],
+    ) -> dict[str, object]:
+        referent_map: dict[str, object] = {}
+        active_entities = comparison_context.get("active_entities", [])
+        ordered_entities = list(active_entities) if isinstance(active_entities, list) and active_entities else list(recent_entities)
+        if "前两个" in query and len(ordered_entities) >= 2:
+            referent_map["前两个"] = ordered_entities[:2]
+        if ("前者" in query or "前两个" in query) and len(ordered_entities) >= 1:
+            referent_map["前者"] = ordered_entities[0]
+        if ("后者" in query or "前两个" in query) and len(ordered_entities) >= 2:
+            referent_map["后者"] = ordered_entities[1]
+        return referent_map
+
     def run(self, state: ResearchState) -> ResearchState:
         raw_query = (state.get("user_query") or "").strip()
         messages = list(state.get("messages", []))
+        referential_query = any(marker in raw_query for marker in ("前两个", "前者", "后者"))
         resolution = self.entity_resolver.resolve(
             query=raw_query,
             messages=messages,
@@ -91,10 +150,24 @@ class ConversationResolverNode:
         )
         current_query_entities = list(resolution.get("query_entities", []))
         normalized_subject = dict(resolution.get("topic", {}) or {})
+        if resolution.get("primary_entity"):
+            current_query_entities = [str(resolution["primary_entity"])]
+        if referential_query:
+            current_query_entities = []
+            if not normalized_subject:
+                anchor_entity = self._resolve_anchor_entity(state=state, messages=messages)
         if self._starts_with_context_marker(raw_query):
             current_query_entities = []
             if not normalized_subject:
                 anchor_entity = self._resolve_anchor_entity(state=state, messages=messages)
+        current_entities = dict(state.get("current_entities", {}))
+        recent_entities = self._build_recent_entities(
+            current_entities=current_entities,
+            anchor_entity=anchor_entity,
+            current_query_entities=current_query_entities,
+        )
+        comparison_context = self._build_comparison_context(raw_query, recent_entities)
+        referent_map = self._build_referent_map(raw_query, recent_entities, comparison_context)
 
         inherited_time_terms = self._extract_recent_time_terms(messages)
         metric_hints = self._extract_metric_hints(raw_query)
@@ -106,9 +179,9 @@ class ConversationResolverNode:
         if raw_query and not normalized_subject and self._needs_resolution(raw_query, current_query_entities) and anchor_entity:
             resolved_query = self._inject_anchor_entity(raw_query, anchor_entity)
 
-        current_entities = dict(state.get("current_entities", {}))
         current_entities["conversation_anchor"] = anchor_entity
         current_entities["current_query_entities"] = current_query_entities
+        current_entities["recent_entities"] = recent_entities
         if anchor_entity:
             current_entities["last_entity"] = anchor_entity
         topic_product = normalized_subject.get("product")
@@ -119,6 +192,9 @@ class ConversationResolverNode:
         if normalized_subject:
             state["current_topic"] = normalized_subject
 
+        state["recent_entities"] = list(recent_entities)
+        state["comparison_context"] = dict(comparison_context)
+        state["referent_map"] = dict(referent_map)
         state["conversation_constraints"] = {
             "follow_up": bool(anchor_entity and self._needs_resolution(raw_query, current_query_entities)),
             "anchor_entity": anchor_entity,
@@ -129,6 +205,8 @@ class ConversationResolverNode:
             "aspect_hints": aspect_hints,
             "comparison_target": comparison_target,
             "output_style_hints": output_style_hints,
+            "comparison_context": comparison_context,
+            "referent_map": referent_map,
             "message_count": len(messages),
         }
         state["resolved_user_query"] = resolved_query

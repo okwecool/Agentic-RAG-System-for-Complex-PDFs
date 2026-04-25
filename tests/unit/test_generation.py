@@ -68,6 +68,98 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual("fake-model", result["model"])
         self.assertEqual("qwen", result["prompt_family"])
 
+    def test_answer_generator_includes_conversation_context_in_prompt(self) -> None:
+        provider = FakeLlmProvider()
+        generator = AnswerGenerator(provider, QwenPromptTemplate())
+        evidence = [
+            {
+                "chunk": FakeChunk(
+                    chunk_id="c1",
+                    doc_id="doc_1",
+                    text="苹果销量增长，华为销量回升。",
+                    page_no=3,
+                    chunk_type="paragraph",
+                    section_path=["1. 手机厂商对比"],
+                )
+            }
+        ]
+
+        generator.generate(
+            "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+            evidence,
+            conversation_context={
+                "dialogue_referents": ["华为", "苹果"],
+                "comparison_target": "苹果",
+                "output_style": "list",
+            },
+        )
+
+        self.assertIn("对话上下文", provider.last_user_prompt)
+        self.assertIn("华为", provider.last_user_prompt)
+        self.assertIn("苹果", provider.last_user_prompt)
+        self.assertIn("list", provider.last_user_prompt)
+
+    def test_answer_generator_adds_prompt_branches_for_dialogue_mode_and_style(self) -> None:
+        provider = FakeLlmProvider()
+        generator = AnswerGenerator(provider, QwenPromptTemplate())
+        evidence = [
+            {
+                "chunk": FakeChunk(
+                    chunk_id="c1",
+                    doc_id="doc_1",
+                    text="苹果销量增长，华为销量回升。",
+                    page_no=3,
+                    chunk_type="paragraph",
+                    section_path=["1. 手机厂商对比"],
+                )
+            }
+        ]
+
+        generator.generate(
+            "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+            evidence,
+            conversation_context={
+                "dialogue_mode": "compare",
+                "follow_up": True,
+                "dialogue_referents": ["华为", "苹果"],
+                "comparison_target": "苹果",
+                "output_style": "detailed",
+            },
+        )
+
+        self.assertIn("这是一个承接上轮上下文的问题", provider.last_user_prompt)
+        self.assertIn("请按对比方式组织答案", provider.last_user_prompt)
+        self.assertIn("请先给结论，再展开说明", provider.last_user_prompt)
+
+    def test_answer_generator_includes_conversation_summary_in_prompt(self) -> None:
+        provider = FakeLlmProvider()
+        generator = AnswerGenerator(provider, QwenPromptTemplate())
+        evidence = [
+            {
+                "chunk": FakeChunk(
+                    chunk_id="c1",
+                    doc_id="doc_1",
+                    text="苹果销量增长，华为销量回升。",
+                    page_no=3,
+                    chunk_type="paragraph",
+                    section_path=["1. 手机厂商对比"],
+                )
+            }
+        ]
+
+        generator.generate(
+            "那其他产品呢",
+            evidence,
+            conversation_context={
+                "follow_up": True,
+                "dialogue_mode": "follow_up",
+                "conversation_summary": "user: 苹果手机近期销量如何\nassistant: 苹果手机近期销量表现强劲",
+            },
+        )
+
+        self.assertIn("会话摘要", provider.last_user_prompt)
+        self.assertIn("苹果手机近期销量如何", provider.last_user_prompt)
+
     def test_qa_service_returns_citations_and_evidence(self) -> None:
         provider = FakeLlmProvider()
         results = [

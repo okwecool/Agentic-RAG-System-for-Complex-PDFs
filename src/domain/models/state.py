@@ -17,6 +17,9 @@ class ResearchState(TypedDict, total=False):
     current_domain: str
     current_entities: dict[str, Any]
     current_topic: dict[str, Any]
+    recent_entities: list[str]
+    comparison_context: dict[str, Any]
+    referent_map: dict[str, Any]
     conversation_constraints: dict[str, Any]
     last_planner_context: dict[str, Any]
     current_time_range: dict[str, Any]
@@ -31,6 +34,7 @@ class ResearchState(TypedDict, total=False):
     candidate_evidence_types: list[str]
     selected_evidence: list[dict[str, Any]]
     selected_evidence_types: list[str]
+    generation_context: dict[str, Any]
     draft_answer: str
     claims: list[dict[str, Any]]
     citation_map: list[dict[str, Any]]

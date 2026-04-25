@@ -58,13 +58,14 @@ class RetrievalStrategistNode:
             tables_only = bool(plan.get("tables_only", False))
             state["retrieval_query"] = query
             logger.info(
-                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s entity_scope=%s time_terms=%s",
+                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s entity_scope=%s dialogue_referents=%s time_terms=%s",
                 query,
                 top_k,
                 tables_only,
                 plan.get("intent"),
                 plan.get("prefers_structured_blocks"),
                 plan.get("entity_scope", []),
+                plan.get("dialogue_referents", []),
                 plan.get("time_terms", []),
             )
             if query:
@@ -150,6 +151,10 @@ class RetrievalStrategistNode:
             normalized = str(term).strip()
             if normalized and normalized not in query and normalized not in enrichment_terms:
                 enrichment_terms.append(normalized)
+        for term in plan.get("dialogue_referents", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
         topic_scope = plan.get("topic_scope", {}) or {}
         if isinstance(topic_scope, dict):
             for key in ("product", "topic"):
@@ -165,6 +170,10 @@ class RetrievalStrategistNode:
             if normalized and normalized not in query and normalized not in enrichment_terms:
                 enrichment_terms.append(normalized)
         for term in plan.get("aspect_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("summary_terms", []) or []:
             normalized = str(term).strip()
             if normalized and normalized not in query and normalized not in enrichment_terms:
                 enrichment_terms.append(normalized)

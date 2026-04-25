@@ -252,6 +252,59 @@ class ConversationResolverNodeTests(unittest.TestCase):
         self.assertEqual(["detailed"], state["conversation_constraints"]["output_style_hints"])
 
 
+    def test_conversation_resolver_tracks_recent_entities_for_compare_follow_up(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run(
+            {
+                "user_query": "相比之下苹果的销量呢",
+                "messages": [
+                    {"role": "user", "content": "华为的手机销量如何"},
+                    {"role": "assistant", "content": "华为 2024 年手机销量约为 5000 万台。"},
+                ],
+                "current_entities": {
+                    "last_entity": "华为",
+                    "recent_entities": ["华为"],
+                },
+            }
+        )
+
+        self.assertEqual(["华为", "苹果"], state["current_entities"]["recent_entities"])
+        self.assertEqual(["华为", "苹果"], state["recent_entities"])
+        self.assertEqual(
+            ["华为", "苹果"],
+            state["conversation_constraints"]["comparison_context"]["active_entities"],
+        )
+        self.assertEqual(
+            ["华为", "苹果"],
+            state["comparison_context"]["active_entities"],
+        )
+
+    def test_conversation_resolver_builds_referent_map_for_first_two_entities(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run(
+            {
+                "user_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "messages": [
+                    {"role": "user", "content": "华为的手机销量如何"},
+                    {"role": "assistant", "content": "华为销量约 5000 万台。"},
+                    {"role": "user", "content": "相比之下苹果的销量呢"},
+                    {"role": "assistant", "content": "苹果销量表现强劲。"},
+                ],
+                "current_entities": {
+                    "last_entity": "苹果",
+                    "recent_entities": ["华为", "苹果"],
+                },
+            }
+        )
+
+        self.assertEqual(["华为", "苹果"], state["conversation_constraints"]["referent_map"]["前两个"])
+        self.assertEqual("华为", state["conversation_constraints"]["referent_map"]["前者"])
+        self.assertEqual("苹果", state["conversation_constraints"]["referent_map"]["后者"])
+        self.assertEqual(["华为", "苹果"], state["referent_map"]["前两个"])
+        self.assertEqual("华为", state["referent_map"]["前者"])
+        self.assertEqual("苹果", state["referent_map"]["后者"])
+
+
 class RuleEntityResolverTests(unittest.TestCase):
     def test_rule_entity_resolver_normalizes_product_subject(self) -> None:
         resolver = RuleEntityResolver()
@@ -478,6 +531,58 @@ class QueryPlannerNodeTests(unittest.TestCase):
         self.assertEqual("华为", state["retrieval_plan"]["comparison_target"])
 
 
+    def test_query_planner_consumes_multi_entity_referents(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "resolved_user_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "current_entities": {
+                    "last_entity": "苹果",
+                    "recent_entities": ["华为", "苹果"],
+                },
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                    "comparison_context": {
+                        "active_entities": ["华为", "苹果"],
+                        "mode": "compare",
+                    },
+                    "referent_map": {
+                        "前两个": ["华为", "苹果"],
+                        "前者": "华为",
+                        "后者": "苹果",
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(["华为", "苹果"], state["retrieval_plan"]["dialogue_referents"])
+        self.assertEqual(["华为", "苹果"], state["last_planner_context"]["dialogue_referents"])
+
+    def test_query_planner_infers_missing_constraints_from_conversation_summary(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "那其他产品呢",
+                "resolved_user_query": "苹果其他产品呢",
+                "conversation_summary": "user: 苹果手机近期销量如何\nassistant: 苹果手机近期销量表现强劲",
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                },
+                "current_entities": {
+                    "current_query_entities": ["苹果"],
+                    "last_entity": "苹果",
+                },
+            }
+        )
+
+        self.assertEqual(["销量"], state["retrieval_plan"]["metric_scope"])
+        self.assertEqual(["近期表现"], state["retrieval_plan"]["aspect_scope"])
+        self.assertEqual(["销量"], state["last_planner_context"]["metric_scope"])
+
+
 class _FakeSearchService:
     embedding_backend = "fake-embedding"
 
@@ -654,6 +759,48 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
         )
         self.assertEqual(search_service.last_query, state["retrieval_query"])
 
+    def test_retrieval_strategist_enriches_query_with_dialogue_referents(self) -> None:
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "normalized_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "tables_only": False,
+                    "entity_scope": [],
+                    "dialogue_referents": ["华为", "苹果"],
+                },
+            }
+        )
+
+        self.assertEqual(
+            "比起前两个手机厂商，还有哪些值得关注的手机厂商 华为 苹果",
+            search_service.last_query,
+        )
+        self.assertEqual(search_service.last_query, state["retrieval_query"])
+
+    def test_retrieval_strategist_enriches_query_with_summary_terms(self) -> None:
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "那其他产品呢",
+                "normalized_query": "苹果其他产品呢",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "tables_only": False,
+                    "summary_terms": ["苹果手机", "销量"],
+                },
+            }
+        )
+
+        self.assertEqual("苹果其他产品呢 苹果手机 销量", search_service.last_query)
+        self.assertEqual(search_service.last_query, state["retrieval_query"])
+
 
 class GenerationNodeTests(unittest.TestCase):
     def test_synthesizer_node_strict_mode_fails_without_generator(self) -> None:
@@ -679,6 +826,62 @@ class GenerationNodeTests(unittest.TestCase):
         self.assertEqual(state["confidence"], "medium")
         self.assertEqual(state["next_action"], "citation_auditor")
         self.assertEqual(len(state["claims"]), 1)
+
+    def test_synthesizer_node_enriches_generation_query_with_dialogue_context(self) -> None:
+        node = SynthesizerNode(
+            answer_generator=AnswerGenerator(_FakeLlmProvider(), QwenPromptTemplate()),
+            default_top_k=2,
+        )
+        state = node.run(
+            {
+                "user_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "normalized_query": "比起前两个手机厂商，还有哪些值得关注的手机厂商",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "dialogue_referents": ["华为", "苹果"],
+                    "comparison_target": "苹果",
+                    "output_style": "list",
+                },
+                "selected_evidence": _FakeSearchService().search_chunks("手机厂商", top_k=1),
+            }
+        )
+
+        self.assertEqual(
+            "比起前两个手机厂商，还有哪些值得关注的手机厂商 华为 苹果 list",
+            state["generation_query"],
+        )
+        self.assertEqual(
+            {
+                "dialogue_referents": ["华为", "苹果"],
+                "comparison_target": "苹果",
+                "output_style": "list",
+                "dialogue_mode": "compare",
+            },
+            state["generation_context"],
+        )
+
+    def test_synthesizer_node_passes_conversation_summary_into_generation_context(self) -> None:
+        node = SynthesizerNode(
+            answer_generator=AnswerGenerator(_FakeLlmProvider(), QwenPromptTemplate()),
+            default_top_k=2,
+        )
+        state = node.run(
+            {
+                "user_query": "那其他产品呢",
+                "normalized_query": "苹果其他产品呢",
+                "conversation_summary": "user: 苹果手机近期销量如何\nassistant: 苹果手机近期销量表现强劲",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "carry_over_constraints": {"follow_up": True},
+                },
+                "selected_evidence": _FakeSearchService().search_chunks("苹果", top_k=1),
+            }
+        )
+
+        self.assertEqual(
+            "user: 苹果手机近期销量如何\nassistant: 苹果手机近期销量表现强劲",
+            state["generation_context"]["conversation_summary"],
+        )
 
     def test_citation_auditor_node_uses_auditor(self) -> None:
         node = CitationAuditorNode(citation_auditor=CitationAuditor())
