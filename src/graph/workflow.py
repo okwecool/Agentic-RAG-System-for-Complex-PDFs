@@ -155,6 +155,10 @@ class QueryWorkflow:
             "top_k": retrieval_plan.get("top_k"),
             "tables_only": retrieval_plan.get("tables_only"),
             "time_terms": list(retrieval_plan.get("time_terms", [])),
+            "metric_scope": list(retrieval_plan.get("metric_scope", [])),
+            "aspect_scope": list(retrieval_plan.get("aspect_scope", [])),
+            "comparison_target": retrieval_plan.get("comparison_target"),
+            "output_style": retrieval_plan.get("output_style"),
         }
 
     @staticmethod

@@ -18,6 +18,7 @@ class ResearchState(TypedDict, total=False):
     current_entities: dict[str, Any]
     current_topic: dict[str, Any]
     conversation_constraints: dict[str, Any]
+    last_planner_context: dict[str, Any]
     current_time_range: dict[str, Any]
     current_intent: str
     current_sub_intents: list[str]

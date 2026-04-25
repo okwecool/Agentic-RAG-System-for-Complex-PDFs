@@ -15,13 +15,28 @@ class _StubWorkflow:
         self.last_initial_state = dict(initial_state)
         query = initial_state["user_query"]
         messages = list(initial_state.get("messages", []))
+        current_entities = {}
+        current_topic = {}
+        last_planner_context = {
+            "metric_scope": ["销量"] if "销量" in query or "电子产品" in query else [],
+            "aspect_scope": ["近期表现"] if "近期" in query or "电子产品" in query else [],
+            "comparison_target": None,
+            "output_style": "list" if "电子产品" in query else None,
+        }
+        if "英伟达" in query:
+            current_entities = {"current_query_entities": ["英伟达"], "last_entity": "英伟达"}
+        if "苹果手机" in query:
+            current_entities = {"current_query_entities": ["苹果"], "last_entity": "苹果", "last_product": "iPhone"}
+            current_topic = {"entity": "苹果", "product": "iPhone", "topic": "苹果手机"}
         return {
             "session_id": initial_state.get("session_id"),
             "thread_id": initial_state.get("thread_id"),
             "turn_index": initial_state.get("turn_index"),
             "user_query": query,
             "messages": messages,
-            "current_entities": {"current_query_entities": ["英伟达"]} if "英伟达" in query else {},
+            "current_entities": current_entities,
+            "current_topic": current_topic,
+            "last_planner_context": last_planner_context,
             "draft_answer": "这是 agentic 测试答案。",
             "confidence": "medium",
             "model": "stub-model",
@@ -129,6 +144,39 @@ class AgenticQaServiceTests(unittest.TestCase):
         self.assertIn("user: 英伟达近期发展势头如何？", persisted["conversation_summary"])
         self.assertIn("assistant: 这是 agentic 测试答案。", persisted["conversation_summary"])
         self.assertEqual("英伟达", persisted["current_entities"]["last_entity"])
+
+    def test_agentic_qa_service_persists_last_planner_context(self) -> None:
+        workflow = _StubWorkflow()
+        thread_store = InMemoryThreadStore()
+        service = AgenticQaService(
+            workflow=workflow,
+            thread_store=thread_store,
+            summarizer=ConversationSummarizer(),
+            top_k=3,
+        )
+
+        service.answer("苹果手机近期销量如何", session_id="session-2")
+        persisted = thread_store.get("session-2")
+
+        self.assertEqual(["销量"], persisted["last_planner_context"]["metric_scope"])
+        self.assertEqual(["近期表现"], persisted["last_planner_context"]["aspect_scope"])
+        self.assertEqual("苹果", persisted["current_topic"]["entity"])
+        self.assertEqual("iPhone", persisted["current_topic"]["product"])
+
+    def test_agentic_qa_service_persists_output_style_in_last_planner_context(self) -> None:
+        workflow = _StubWorkflow()
+        thread_store = InMemoryThreadStore()
+        service = AgenticQaService(
+            workflow=workflow,
+            thread_store=thread_store,
+            summarizer=ConversationSummarizer(),
+            top_k=3,
+        )
+
+        service.answer("那他的其他电子产品呢", session_id="session-3")
+        persisted = thread_store.get("session-3")
+
+        self.assertEqual("list", persisted["last_planner_context"]["output_style"])
 
 
 if __name__ == "__main__":

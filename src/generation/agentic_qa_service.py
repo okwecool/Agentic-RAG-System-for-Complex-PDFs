@@ -60,6 +60,7 @@ class AgenticQaService:
             "current_entities": dict(session_state.get("current_entities", {})),
             "current_topic": dict(session_state.get("current_topic", {})),
             "conversation_constraints": dict(session_state.get("conversation_constraints", {})),
+            "last_planner_context": dict(session_state.get("last_planner_context", {})),
             "user_query": query,
             "retry_count": 0,
             "max_retry_count": 2,
@@ -134,5 +135,8 @@ class AgenticQaService:
             "current_entities": current_entities,
             "current_topic": dict(final_state.get("current_topic", previous_state.get("current_topic", {}))),
             "conversation_constraints": dict(final_state.get("conversation_constraints", {})),
+            "last_planner_context": dict(
+                final_state.get("last_planner_context", previous_state.get("last_planner_context", {}))
+            ),
             "current_domain": str(final_state.get("current_domain", previous_state.get("current_domain", ""))),
         }

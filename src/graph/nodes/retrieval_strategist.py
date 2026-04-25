@@ -160,6 +160,17 @@ class RetrievalStrategistNode:
             normalized = str(term).strip()
             if normalized and normalized not in query and normalized not in enrichment_terms:
                 enrichment_terms.append(normalized)
+        for term in plan.get("metric_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("aspect_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        comparison_target = str(plan.get("comparison_target", "")).strip()
+        if comparison_target and comparison_target not in query and comparison_target not in enrichment_terms:
+            enrichment_terms.append(comparison_target)
 
         if enrichment_terms:
             query = " ".join([query, *enrichment_terms]).strip()

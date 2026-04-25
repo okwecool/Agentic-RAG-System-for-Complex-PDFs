@@ -23,6 +23,7 @@ class QueryPlannerNode:
         query_signature = SearchSignals.build_query_signature(normalized_query)
         request_options = state.get("request_options", {})
         conversation_constraints = state.get("conversation_constraints", {})
+        last_planner_context = state.get("last_planner_context", {})
         effective_entities = self._resolve_effective_entities(
             state.get("current_entities", {}),
             conversation_constraints,
@@ -46,6 +47,11 @@ class QueryPlannerNode:
             normalized_query,
             conversation_constraints,
         )
+        planner_constraints = self._resolve_planner_constraints(
+            normalized_query,
+            conversation_constraints,
+            last_planner_context,
+        )
         state["retrieval_plan"] = self._build_retrieval_plan(
             normalized_query=normalized_query,
             intent=state["current_intent"],
@@ -55,7 +61,18 @@ class QueryPlannerNode:
             conversation_constraints=conversation_constraints,
             current_entities=effective_entities,
             current_topic=current_topic,
+            planner_constraints=planner_constraints,
         )
+        state["last_planner_context"] = {
+            "intent": state["current_intent"],
+            "metric_scope": planner_constraints["metric_scope"],
+            "aspect_scope": planner_constraints["aspect_scope"],
+            "comparison_target": planner_constraints["comparison_target"],
+            "output_style": planner_constraints["output_style"],
+            "entity_scope": list(state["retrieval_plan"].get("entity_scope", [])),
+            "topic_scope": dict(state["retrieval_plan"].get("topic_scope", {})),
+            "time_terms": list(state["retrieval_plan"].get("time_terms", [])),
+        }
         state["next_action"] = "retrieval_strategist"
         logger.info(
             "planner.plan normalized_query=%r intent=%s sub_intents=%s entities=%s time_range=%s request_options=%s retrieval_plan=%s",
@@ -114,7 +131,7 @@ class QueryPlannerNode:
             sub_intents.append("time_inherited")
         if query_signature.prefers_structured_blocks:
             sub_intents.append("structured_preferred")
-        if re.search(r"(多少|占比|比例|增长|同比|环比|数值|金额|规模)", normalized_query):
+        if re.search(r"(多少|占比|比率|增长|同比|环比|数值|金额|规模)", normalized_query):
             sub_intents.append("fact_lookup")
         if re.search(r"(为什么|原因|影响|驱动|逻辑)", normalized_query):
             sub_intents.append("reasoning")
@@ -153,6 +170,7 @@ class QueryPlannerNode:
         conversation_constraints: dict[str, object],
         current_entities: dict[str, object],
         current_topic: dict[str, object],
+        planner_constraints: dict[str, object],
     ) -> dict[str, object]:
         complexity = self._estimate_complexity(normalized_query)
         prefers_tables = bool(
@@ -184,6 +202,10 @@ class QueryPlannerNode:
             "time_terms": list(time_range.get("raw_terms", [])),
             "entity_scope": list(current_entities.get("active_entities", [])),
             "topic_scope": dict(current_topic),
+            "metric_scope": list(planner_constraints.get("metric_scope", [])),
+            "aspect_scope": list(planner_constraints.get("aspect_scope", [])),
+            "comparison_target": planner_constraints.get("comparison_target"),
+            "output_style": planner_constraints.get("output_style"),
             "carry_over_constraints": {
                 "follow_up": bool(conversation_constraints.get("follow_up")),
                 "anchor_entity": conversation_constraints.get("anchor_entity"),
@@ -239,3 +261,37 @@ class QueryPlannerNode:
             if isinstance(active_entities, list) and active_entities:
                 result["entity"] = active_entities[0]
         return result
+
+    @staticmethod
+    def _resolve_planner_constraints(
+        normalized_query: str,
+        conversation_constraints: dict[str, object],
+        last_planner_context: dict[str, object],
+    ) -> dict[str, object]:
+        metric_scope = list(conversation_constraints.get("metric_hints", []))
+        aspect_scope = list(conversation_constraints.get("aspect_hints", []))
+        comparison_target = conversation_constraints.get("comparison_target")
+        output_style_hints = list(conversation_constraints.get("output_style_hints", []))
+
+        follow_up = bool(conversation_constraints.get("follow_up"))
+        if follow_up and not metric_scope:
+            metric_scope = list(last_planner_context.get("metric_scope", []))
+        if follow_up and not aspect_scope:
+            aspect_scope = list(last_planner_context.get("aspect_scope", []))
+        if follow_up and not comparison_target:
+            comparison_target = last_planner_context.get("comparison_target")
+
+        output_style = output_style_hints[0] if output_style_hints else None
+        if follow_up and not output_style:
+            inherited_output_style = str(last_planner_context.get("output_style", "")).strip()
+            output_style = inherited_output_style or None
+
+        if "对比" in normalized_query or "比较" in normalized_query:
+            aspect_scope = list(dict.fromkeys([*aspect_scope, "对比分析"]))
+
+        return {
+            "metric_scope": metric_scope,
+            "aspect_scope": aspect_scope,
+            "comparison_target": comparison_target,
+            "output_style": output_style,
+        }

@@ -5,6 +5,7 @@ import unittest
 from src.generation.answer_generator import AnswerGenerator
 from src.generation.citation_auditor import CitationAuditor
 from src.generation.prompts.qwen import QwenPromptTemplate
+from src.entity_resolution.rule_resolver import RuleEntityResolver
 from src.graph import route_rules
 from src.graph.nodes.citation_auditor import CitationAuditorNode
 from src.graph.nodes.conversation_resolver import ConversationResolverNode
@@ -215,6 +216,80 @@ class ConversationResolverNodeTests(unittest.TestCase):
         self.assertEqual("苹果的其他电子产品呢", state["resolved_user_query"])
         self.assertEqual("苹果", state["conversation_constraints"]["anchor_entity"])
         self.assertTrue(state["conversation_constraints"]["follow_up"])
+        self.assertEqual(["产品表现"], state["conversation_constraints"]["aspect_hints"])
+
+    def test_conversation_resolver_extracts_metric_hints(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run({"user_query": "苹果手机近期销量如何"})
+
+        self.assertEqual(["销量"], state["conversation_constraints"]["metric_hints"])
+        self.assertEqual(["近期表现"], state["conversation_constraints"]["aspect_hints"])
+
+    def test_conversation_resolver_extracts_comparison_target(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run(
+            {
+                "user_query": "那和华为比呢",
+                "messages": [
+                    {"role": "user", "content": "苹果手机近期销量如何"},
+                    {"role": "assistant", "content": "苹果手机近期销量表现强劲。"},
+                ],
+                "current_entities": {"last_entity": "苹果", "last_product": "iPhone"},
+                "current_topic": {
+                    "entity": "苹果",
+                    "product": "iPhone",
+                    "topic": "苹果手机",
+                },
+            }
+        )
+
+        self.assertEqual("华为", state["conversation_constraints"]["comparison_target"])
+
+    def test_conversation_resolver_extracts_output_style_hints(self) -> None:
+        node = ConversationResolverNode()
+        state = node.run({"user_query": "详细展开说说"})
+
+        self.assertEqual(["detailed"], state["conversation_constraints"]["output_style_hints"])
+
+
+class RuleEntityResolverTests(unittest.TestCase):
+    def test_rule_entity_resolver_normalizes_product_subject(self) -> None:
+        resolver = RuleEntityResolver()
+
+        result = resolver.resolve(
+            query="苹果手机近期销量如何",
+            messages=[],
+            current_entities={},
+            current_topic={},
+        )
+
+        self.assertEqual("苹果", result["primary_entity"])
+        self.assertEqual(["苹果"], result["query_entities"])
+        self.assertEqual("iPhone", result["topic"]["product"])
+        self.assertEqual("苹果手机", result["topic"]["topic"])
+        self.assertEqual("rule_alias", result["mentions"][0]["source"])
+
+    def test_rule_entity_resolver_extracts_query_entities_without_alias(self) -> None:
+        resolver = RuleEntityResolver()
+
+        result = resolver.resolve(
+            query="英伟达近期发展势头如何？",
+            messages=[],
+            current_entities={},
+            current_topic={},
+        )
+
+        self.assertEqual("英伟达", result["primary_entity"])
+        self.assertEqual(["英伟达"], result["query_entities"])
+
+    def test_conversation_resolver_can_use_injected_entity_resolver(self) -> None:
+        resolver = RuleEntityResolver()
+        node = ConversationResolverNode(entity_resolver=resolver)
+
+        state = node.run({"user_query": "苹果手机近期销量如何"})
+
+        self.assertEqual("苹果", state["current_entities"]["last_entity"])
+        self.assertEqual("iPhone", state["current_entities"]["last_product"])
 
 
 class QueryPlannerNodeTests(unittest.TestCase):
@@ -304,6 +379,103 @@ class QueryPlannerNodeTests(unittest.TestCase):
 
         self.assertEqual("苹果", state["retrieval_plan"]["entity_scope"][0])
         self.assertEqual("iPhone", state["retrieval_plan"]["topic_scope"]["product"])
+
+    def test_query_planner_inherits_metric_scope_for_follow_up(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "那他的其他电子产品呢",
+                "resolved_user_query": "苹果的其他电子产品呢",
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                    "metric_hints": [],
+                    "aspect_hints": ["近期表现"],
+                },
+                "last_planner_context": {
+                    "metric_scope": ["销量"],
+                    "aspect_scope": ["近期表现"],
+                    "comparison_target": None,
+                },
+                "current_entities": {"current_query_entities": ["苹果"]},
+                "current_topic": {"entity": "苹果", "product": "iPhone", "topic": "苹果手机"},
+            }
+        )
+
+        self.assertEqual(["销量"], state["retrieval_plan"]["metric_scope"])
+        self.assertEqual(["近期表现"], state["retrieval_plan"]["aspect_scope"])
+
+    def test_query_planner_inherits_output_style_for_follow_up(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "那其他产品呢",
+                "resolved_user_query": "苹果其他产品呢",
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                    "output_style_hints": [],
+                },
+                "last_planner_context": {
+                    "metric_scope": ["销量"],
+                    "aspect_scope": ["近期表现"],
+                    "comparison_target": None,
+                    "output_style": "list",
+                },
+                "current_entities": {"current_query_entities": ["苹果"]},
+                "current_topic": {"entity": "苹果", "product": "iPhone", "topic": "苹果手机"},
+            }
+        )
+
+        self.assertEqual("list", state["retrieval_plan"]["output_style"])
+        self.assertEqual("list", state["last_planner_context"]["output_style"])
+
+    def test_query_planner_current_output_style_overrides_inherited_style(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "详细展开说说",
+                "resolved_user_query": "苹果详细展开说说",
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                    "output_style_hints": ["detailed"],
+                },
+                "last_planner_context": {
+                    "metric_scope": ["销量"],
+                    "aspect_scope": ["近期表现"],
+                    "comparison_target": None,
+                    "output_style": "list",
+                },
+                "current_entities": {"current_query_entities": ["苹果"]},
+                "current_topic": {"entity": "苹果"},
+            }
+        )
+
+        self.assertEqual("detailed", state["retrieval_plan"]["output_style"])
+
+    def test_query_planner_inherits_comparison_target_for_follow_up(self) -> None:
+        node = QueryPlannerNode()
+        state = node.run(
+            {
+                "user_query": "那其他产品呢",
+                "resolved_user_query": "苹果其他产品呢",
+                "conversation_constraints": {
+                    "follow_up": True,
+                    "anchor_entity": "苹果",
+                    "comparison_target": None,
+                },
+                "last_planner_context": {
+                    "metric_scope": ["销量"],
+                    "aspect_scope": ["对比分析"],
+                    "comparison_target": "华为",
+                },
+                "current_entities": {"current_query_entities": ["苹果"]},
+                "current_topic": {"entity": "苹果"},
+            }
+        )
+
+        self.assertEqual("华为", state["retrieval_plan"]["comparison_target"])
 
 
 class _FakeSearchService:
@@ -453,6 +625,31 @@ class RetrievalStrategistNodeTests(unittest.TestCase):
 
         self.assertEqual(
             "苹果的其他电子产品呢 iPhone 苹果手机",
+            search_service.last_query,
+        )
+        self.assertEqual(search_service.last_query, state["retrieval_query"])
+
+    def test_retrieval_strategist_enriches_query_with_metric_scope(self) -> None:
+        search_service = _FakeSearchService()
+        node = RetrievalStrategistNode(search_service=search_service, default_top_k=2)
+
+        state = node.run(
+            {
+                "user_query": "苹果的其他电子产品呢",
+                "normalized_query": "苹果的其他电子产品呢",
+                "retrieval_plan": {
+                    "top_k": 2,
+                    "tables_only": False,
+                    "entity_scope": ["苹果"],
+                    "topic_scope": {"product": "iPhone", "topic": "苹果手机"},
+                    "metric_scope": ["销量"],
+                    "aspect_scope": ["近期表现"],
+                },
+            }
+        )
+
+        self.assertEqual(
+            "苹果的其他电子产品呢 iPhone 苹果手机 销量 近期表现",
             search_service.last_query,
         )
         self.assertEqual(search_service.last_query, state["retrieval_query"])
