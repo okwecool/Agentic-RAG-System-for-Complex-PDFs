@@ -15,7 +15,12 @@ class AnswerGenerator:
         self.llm_provider = llm_provider
         self.prompt_template = prompt_template
 
-    def generate(self, query: str, evidence: list[dict]) -> dict:
+    def generate(
+        self,
+        query: str,
+        evidence: list[dict],
+        conversation_context: dict | None = None,
+    ) -> dict:
         if not evidence:
             return {
                 "answer": "根据当前检索到的 PDF 证据，暂时无法确定答案。",
@@ -25,7 +30,11 @@ class AnswerGenerator:
                 "prompt_family": self.prompt_template.family,
             }
 
-        prompt = self.prompt_template.build(query=query, evidence=evidence)
+        prompt = self.prompt_template.build(
+            query=query,
+            evidence=evidence,
+            conversation_context=conversation_context,
+        )
         answer = self.llm_provider.generate(
             system_prompt=prompt.system_prompt,
             user_prompt=prompt.user_prompt,

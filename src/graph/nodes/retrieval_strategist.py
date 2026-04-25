@@ -17,9 +17,11 @@ class RetrievalStrategistNode:
         self,
         search_service: SearchService | None = None,
         default_top_k: int = 6,
+        strict: bool = False,
     ) -> None:
         self.search_service = search_service
         self.default_top_k = default_top_k
+        self.strict = strict
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RetrievalStrategistNode":
@@ -43,21 +45,28 @@ class RetrievalStrategistNode:
                 fusion=fusion,
                 reranker=reranker,
             )
-        return cls(search_service=search_service, default_top_k=settings.qa_top_k)
+        return cls(search_service=search_service, default_top_k=settings.qa_top_k, strict=True)
 
     def run(self, state: ResearchState) -> ResearchState:
         if self.search_service is not None:
-            query = (state.get("normalized_query") or state.get("user_query") or "").strip()
             plan = state.get("retrieval_plan", {})
+            query = self._build_search_query(
+                state.get("normalized_query") or state.get("user_query") or "",
+                plan,
+            )
             top_k = int(plan.get("top_k", self.default_top_k))
             tables_only = bool(plan.get("tables_only", False))
+            state["retrieval_query"] = query
             logger.info(
-                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s",
+                "retrieval.plan query=%r top_k=%s tables_only=%s intent=%s prefers_structured=%s entity_scope=%s dialogue_referents=%s time_terms=%s",
                 query,
                 top_k,
                 tables_only,
                 plan.get("intent"),
                 plan.get("prefers_structured_blocks"),
+                plan.get("entity_scope", []),
+                plan.get("dialogue_referents", []),
+                plan.get("time_terms", []),
             )
             if query:
                 results = (
@@ -97,6 +106,9 @@ class RetrievalStrategistNode:
                 )
                 return state
 
+        if self.strict:
+            raise RuntimeError("RetrievalStrategistNode requires a SearchService in strict mode.")
+
         if not state.get("retrieved_candidates"):
             state["retrieved_candidates"] = [
                 {
@@ -130,6 +142,48 @@ class RetrievalStrategistNode:
             state["retry_count"],
         )
         return state
+
+    @staticmethod
+    def _build_search_query(base_query: str, plan: dict) -> str:
+        query = " ".join(str(base_query or "").strip().split())
+        enrichment_terms: list[str] = []
+        for term in plan.get("entity_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("dialogue_referents", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        topic_scope = plan.get("topic_scope", {}) or {}
+        if isinstance(topic_scope, dict):
+            for key in ("product", "topic"):
+                normalized = str(topic_scope.get(key, "")).strip()
+                if normalized and normalized not in query and normalized not in enrichment_terms:
+                    enrichment_terms.append(normalized)
+        for term in plan.get("time_terms", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("metric_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("aspect_scope", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        for term in plan.get("summary_terms", []) or []:
+            normalized = str(term).strip()
+            if normalized and normalized not in query and normalized not in enrichment_terms:
+                enrichment_terms.append(normalized)
+        comparison_target = str(plan.get("comparison_target", "")).strip()
+        if comparison_target and comparison_target not in query and comparison_target not in enrichment_terms:
+            enrichment_terms.append(comparison_target)
+
+        if enrichment_terms:
+            query = " ".join([query, *enrichment_terms]).strip()
+        return query
 
     @staticmethod
     def _infer_evidence_type(item: dict) -> str:

@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from src.generation.prompts.base import BasePromptTemplate, PromptBundle
-from src.generation.prompts.chinese_generic import _format_evidence
+from src.generation.prompts.chinese_generic import _format_conversation_context, _format_evidence
 
 
 class QwenPromptTemplate(BasePromptTemplate):
     family = "qwen"
 
-    def build(self, query: str, evidence: list[dict]) -> PromptBundle:
+    def build(
+        self,
+        query: str,
+        evidence: list[dict],
+        conversation_context: dict | None = None,
+    ) -> PromptBundle:
         context = _format_evidence(evidence)
+        conversation_block = _format_conversation_context(conversation_context)
         return PromptBundle(
             system_prompt=(
                 "你是一个严谨的 PDF 问答助手。"
@@ -21,6 +27,7 @@ class QwenPromptTemplate(BasePromptTemplate):
             user_prompt=(
                 "请阅读下面的问题和证据后作答。\n\n"
                 f"问题：\n{query}\n\n"
+                f"{conversation_block}"
                 f"证据：\n{context}\n\n"
                 "输出要求：\n"
                 "1. 只根据证据回答。\n"

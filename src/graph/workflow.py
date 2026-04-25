@@ -10,7 +10,6 @@ from src.graph.nodes.citation_auditor import CitationAuditorNode
 from src.graph.nodes.conversation_resolver import ConversationResolverNode
 from src.graph.nodes.query_planner import QueryPlannerNode
 from src.graph.nodes.retrieval_strategist import RetrievalStrategistNode
-from src.graph.nodes.supervisor import SupervisorNode
 from src.graph.nodes.synthesizer import SynthesizerNode
 from src.graph.router import Router
 
@@ -21,7 +20,6 @@ class QueryWorkflow:
     def __init__(
         self,
         router: Router | None = None,
-        supervisor: SupervisorNode | None = None,
         conversation_resolver: ConversationResolverNode | None = None,
         query_planner: QueryPlannerNode | None = None,
         retrieval_strategist: RetrievalStrategistNode | None = None,
@@ -30,7 +28,6 @@ class QueryWorkflow:
         max_steps: int = 8,
     ) -> None:
         self.router = router or Router()
-        self.supervisor = supervisor or SupervisorNode()
         self.conversation_resolver = conversation_resolver or ConversationResolverNode()
         self.query_planner = query_planner or QueryPlannerNode()
         self.retrieval_strategist = retrieval_strategist or RetrievalStrategistNode()
@@ -53,6 +50,7 @@ class QueryWorkflow:
         state.setdefault("retry_count", 0)
         state.setdefault("max_retry_count", 2)
         state.setdefault("route_trace", [])
+        state.setdefault("degradation_notes", [])
         logger.info(
             "workflow.start query=%r max_steps=%s initial_retry_count=%s",
             state.get("user_query"),
@@ -62,7 +60,8 @@ class QueryWorkflow:
 
         for step_index in range(1, self.max_steps + 1):
             decision = self.router.decide(state)
-            self.supervisor.run(state, decision)
+            state["route_decision"] = decision
+            state["next_action"] = decision["next_node"]
             logger.info(
                 "workflow.step index=%s next_node=%s reason=%s route_type=%s",
                 step_index,
@@ -80,10 +79,16 @@ class QueryWorkflow:
 
             next_node = decision["next_node"]
             if next_node == "finish" or not decision.get("should_continue", False):
-                state["workflow_status"] = "completed"
+                if decision.get("route_type") == "finish_failed":
+                    state["workflow_status"] = "failed"
+                elif decision.get("route_type") == "finish_degraded":
+                    state["workflow_status"] = "degraded"
+                else:
+                    state["workflow_status"] = "completed"
                 trace_entry["node_summary"] = {
                     "workflow_status": state["workflow_status"],
                     "retry_count": state.get("retry_count", 0),
+                    "degradation_notes": list(state.get("degradation_notes", [])),
                 }
                 state["route_trace"].append(trace_entry)
                 logger.info(
@@ -150,6 +155,10 @@ class QueryWorkflow:
             "top_k": retrieval_plan.get("top_k"),
             "tables_only": retrieval_plan.get("tables_only"),
             "time_terms": list(retrieval_plan.get("time_terms", [])),
+            "metric_scope": list(retrieval_plan.get("metric_scope", [])),
+            "aspect_scope": list(retrieval_plan.get("aspect_scope", [])),
+            "comparison_target": retrieval_plan.get("comparison_target"),
+            "output_style": retrieval_plan.get("output_style"),
         }
 
     @staticmethod
@@ -164,6 +173,7 @@ class QueryWorkflow:
     @staticmethod
     def _summarize_retrieval(state: ResearchState) -> dict:
         return {
+            "retrieval_query": state.get("retrieval_query"),
             "retrieved_count": len(state.get("retrieved_candidates", [])),
             "selected_count": len(state.get("selected_evidence", [])),
             "selected_evidence_types": list(state.get("selected_evidence_types", [])),
@@ -188,4 +198,3 @@ class QueryWorkflow:
             "confidence": state.get("confidence"),
             "workflow_status": state.get("workflow_status"),
         }
-

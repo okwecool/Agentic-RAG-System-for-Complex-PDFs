@@ -14,5 +14,10 @@ class PromptBundle:
 class BasePromptTemplate:
     family = "base"
 
-    def build(self, query: str, evidence: list[dict]) -> PromptBundle:
+    def build(
+        self,
+        query: str,
+        evidence: list[dict],
+        conversation_context: dict | None = None,
+    ) -> PromptBundle:
         raise NotImplementedError
